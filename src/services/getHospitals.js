@@ -1,5 +1,4 @@
-
-import axiosInstance from "../api/axiosInstance";
+import axiosInstance from "../API/axiosInstance";
 
 export const getHospitals = async () => {
     try {

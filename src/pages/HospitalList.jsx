@@ -12,13 +12,17 @@ function HospitalList() {
             try {
                 const response = await getHospitals();
 
-                // Supports common API response formats
                 const hospitalData = Array.isArray(response)
                     ? response
-                    : response.data || response.hospitals || [];
+                    : Array.isArray(response?.data)
+                        ? response.data
+                        : Array.isArray(response?.hospitals)
+                            ? response.hospitals
+                            : [];
 
                 setHospitals(hospitalData);
             } catch (err) {
+                console.error("Hospital fetch error:", err);
                 setError("Unable to load hospitals. Please try again.");
             } finally {
                 setLoading(false);
@@ -47,34 +51,19 @@ function HospitalList() {
             </h1>
 
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {hospitals.map((hospital) => (
+                {hospitals.map((hospital, index) => (
                     <div
-                        key={hospital._id}
+                        key={hospital._id || index}
                         className="rounded-lg bg-white p-5 shadow"
                     >
                         <h2 className="mb-2 text-xl font-semibold">
-                            {hospital.hospitalName}
+                            {hospital.hospitalName || "Hospital"}
                         </h2>
 
-                        <p>
-                            <strong>Type:</strong>{" "}
-                            {hospital.hospitalType || "Not provided"}
-                        </p>
-
-                        <p>
-                            <strong>Contact:</strong>{" "}
-                            {hospital.contactPerson || "Not provided"}
-                        </p>
-
-                        <p>
-                            <strong>Email:</strong>{" "}
-                            {hospital.email || "Not provided"}
-                        </p>
-
-                        <p>
-                            <strong>Phone:</strong>{" "}
-                            {hospital.phone || "Not provided"}
-                        </p>
+                        <p><strong>Type:</strong> {hospital.hospitalType || "Not provided"}</p>
+                        <p><strong>Contact:</strong> {hospital.contactPerson || "Not provided"}</p>
+                        <p><strong>Email:</strong> {hospital.email || "Not provided"}</p>
+                        <p><strong>Phone:</strong> {hospital.phone || "Not provided"}</p>
 
                         <p>
                             <strong>Location:</strong>{" "}
@@ -84,8 +73,7 @@ function HospitalList() {
                         </p>
 
                         <p className="mt-3">
-                            <strong>Status:</strong>{" "}
-                            {hospital.status || "Pending"}
+                            <strong>Status:</strong> {hospital.status || "Pending"}
                         </p>
                     </div>
                 ))}
