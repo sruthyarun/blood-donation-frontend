@@ -11,6 +11,7 @@ import {
     FaMapMarkerAlt,
     FaLock,
     FaSave,
+    FaArrowLeft,
 } from "react-icons/fa";
 import { StateSelect, CitySelect } from "react-country-state-city";
 import { registerBloodBank } from "../../API/addBloodBank";
@@ -124,6 +125,21 @@ function BloodBankRegistration() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-red-100 to-pink-100 py-10 px-4">
+            <button
+                type="button"
+                onClick={() => navigate("/")}
+                className="flex items-center gap-2 mb-5
+                               text-gray-600
+                               hover:text-red-600
+                               font-semibold
+                               transition duration-300"
+            >
+                <FaArrowLeft />
+
+                <span>
+                    Back to Home
+                </span>
+            </button>
 
             <div className="max-w-6xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
 

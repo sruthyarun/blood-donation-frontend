@@ -1,4 +1,6 @@
 
+import { useState } from "react";
+
 import {
     FaTint,
     FaHome,
@@ -9,6 +11,8 @@ import {
     FaBell,
     FaUser,
     FaSignOutAlt,
+    FaBars,
+    FaTimes,
 } from "react-icons/fa";
 
 import { Link, useNavigate } from "react-router-dom";
@@ -19,15 +23,24 @@ function BloodBankPanel({ children }) {
     const navigate = useNavigate();
     const dispatch = useDispatch();
 
+    const [menuOpen, setMenuOpen] = useState(false);
+
     const user = useSelector(
         (state) => state.user.currentUser
     );
 
     const handleLogout = () => {
         dispatch(logoutUser());
+
         localStorage.removeItem("loggedInUser");
         sessionStorage.removeItem("bloodBankToken");
+
+        setMenuOpen(false);
         navigate("/login");
+    };
+
+    const closeMenu = () => {
+        setMenuOpen(false);
     };
 
     const links = [
@@ -56,7 +69,6 @@ function BloodBankPanel({ children }) {
             icon: FaHeartbeat,
             label: "Emergency Requests",
         },
-
         {
             to: "/bloodbank/completion-actions",
             icon: FaClipboardList,
@@ -75,58 +87,131 @@ function BloodBankPanel({ children }) {
     ];
 
     return (
-        <div className="flex min-h-screen bg-gray-100">
-            {/* Sidebar */}
-            <aside className="w-64 shrink-0 bg-red-800 p-6 text-white">
-                <div className="mb-8">
-                    <h1 className="flex items-center gap-2 text-2xl font-bold">
-                        <FaTint />
-                        Blood Bank
-                    </h1>
+        <div className="min-h-screen bg-gray-100">
 
-                    {user && (
-                        <div className="mt-5 rounded-lg bg-red-700 p-3">
-                            <p className="break-words font-semibold">
-                                {user.bankName ||
-                                    user.bloodBankName ||
-                                    user.fullName ||
-                                    "Blood Bank User"}
-                            </p>
+            {/* Mobile Header */}
+            <div className="lg:hidden flex items-center justify-between bg-red-800 p-4 text-white">
 
-                            <p className="mt-1 break-all text-sm text-red-200">
-                                {user.email}
-                            </p>
+                <h1 className="flex items-center gap-2 text-xl font-bold">
+                    <FaTint />
+                    Blood Bank
+                </h1>
+
+                <button
+                    type="button"
+                    onClick={() => setMenuOpen(!menuOpen)}
+                    className="p-1 text-2xl"
+                    aria-label={menuOpen ? "Close menu" : "Open menu"}
+                >
+                    {menuOpen ? <FaTimes /> : <FaBars />}
+                </button>
+
+            </div>
+
+            {/* Mobile Overlay */}
+            {menuOpen && (
+                <div
+                    onClick={closeMenu}
+                    className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+                />
+            )}
+
+            <div className="flex min-h-screen flex-col lg:flex-row">
+
+                {/* Sidebar */}
+                <aside
+                    className={`
+                        fixed left-0 top-0 z-50
+                        flex h-screen w-64 flex-col
+                        overflow-y-auto
+                        bg-red-800 p-6 text-white
+                        transform transition-transform duration-300
+                        lg:sticky lg:top-0 lg:translate-x-0
+                        lg:z-auto lg:shrink-0
+                        ${menuOpen
+                            ? "translate-x-0"
+                            : "-translate-x-full"
+                        }
+                    `}
+                >
+
+                    {/* Sidebar Heading */}
+                    <div className="mb-8">
+
+                        <div className="mb-8 flex items-center justify-between">
+
+                            <h1 className="flex items-center gap-2 text-2xl font-bold">
+                                <FaTint />
+                                Blood Bank
+                            </h1>
+
+                            <button
+                                type="button"
+                                onClick={closeMenu}
+                                className="text-xl lg:hidden"
+                                aria-label="Close menu"
+                            >
+                                <FaTimes />
+                            </button>
+
                         </div>
-                    )}
-                </div>
 
-                <nav className="space-y-5">
-                    {links.map(({ to, icon: Icon, label }) => (
-                        <Link
-                            key={to}
-                            to={to}
-                            className="flex items-center gap-3 transition hover:text-yellow-300"
+                        {/* Blood Bank User Information */}
+                        {user && (
+                            <div className="mt-5 rounded-lg bg-red-700 p-3">
+
+                                <p className="break-words font-semibold">
+                                    {user.bankName ||
+                                        user.bloodBankName ||
+                                        user.fullName ||
+                                        "Blood Bank User"}
+                                </p>
+
+                                <p className="mt-1 break-all text-sm text-red-200">
+                                    {user.email}
+                                </p>
+
+                            </div>
+                        )}
+
+                    </div>
+
+                    {/* Navigation */}
+                    <nav className="flex-1 space-y-5">
+
+                        {links.map(({ to, icon: Icon, label }) => (
+                            <Link
+                                key={to}
+                                to={to}
+                                onClick={closeMenu}
+                                className="flex items-center gap-3 transition-colors hover:text-yellow-300"
+                            >
+                                <Icon className="shrink-0 text-lg" />
+
+                                <span>{label}</span>
+                            </Link>
+                        ))}
+                        {/* Logout */}
+                        <button
+                            type="button"
+                            onClick={handleLogout}
+                            className="mt-8 flex items-center gap-3 transition-colors hover:text-yellow-300"
                         >
-                            <Icon className="shrink-0" />
-                            <span>{label}</span>
-                        </Link>
-                    ))}
+                            <FaSignOutAlt />
+                            Logout
+                        </button>
+                    </nav>
 
-                    <button
-                        type="button"
-                        onClick={handleLogout}
-                        className="flex items-center gap-3 transition hover:text-yellow-300"
-                    >
-                        <FaSignOutAlt />
-                        Logout
-                    </button>
-                </nav>
-            </aside>
 
-            {/* Main page content */}
-            <main className="min-w-0 flex-1">
-                {children}
-            </main>
+
+                </aside>
+
+                {/* Main Page Content */}
+                <main className="min-w-0 flex-1">
+                    {children}
+                </main>
+
+            </div>
         </div>
     );
 }

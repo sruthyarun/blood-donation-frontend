@@ -1,15 +1,15 @@
+
 import { useState } from "react";
-import axios from "axios";
+
 import {
     FaPhoneAlt,
     FaEnvelope,
     FaMapMarkerAlt,
     FaClock,
 } from "react-icons/fa";
-import Navbar from "../components/Navbar";
 
-const API_URL =
-    "https://blood-donation-backend-olwl.onrender.com/feedback";
+import Navbar from "../components/Navbar";
+import axiosInstance from "../API/axiosInstance";
 
 function Contact() {
     const [formData, setFormData] = useState({
@@ -24,6 +24,7 @@ function Contact() {
     const [success, setSuccess] = useState("");
     const [serverError, setServerError] = useState("");
 
+    // Handle input changes
     const handleChange = (e) => {
         const { name, value } = e.target;
 
@@ -41,45 +42,41 @@ function Contact() {
         setServerError("");
     };
 
+    // Form validation
     const validateForm = () => {
         const newErrors = {};
 
-        if (!formData.name.trim()) {
+        const name = formData.name.trim();
+        const email = formData.email.trim();
+        const subject = formData.subject.trim();
+        const message = formData.message.trim();
+
+        if (!name) {
             newErrors.name = "Name is required";
-        } else if (formData.name.trim().length < 3) {
-            newErrors.name =
-                "Name must contain at least 3 characters";
-        } else if (!/^[A-Za-z\s]+$/.test(formData.name.trim())) {
-            newErrors.name =
-                "Name should contain only letters and spaces";
+        } else if (name.length < 3) {
+            newErrors.name = "Name must contain at least 3 characters";
+        } else if (!/^[A-Za-z\s]+$/.test(name)) {
+            newErrors.name = "Name should contain only letters and spaces";
         }
 
-        if (!formData.email.trim()) {
+        if (!email) {
             newErrors.email = "Email is required";
-        } else if (
-            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-                formData.email.trim()
-            )
-        ) {
-            newErrors.email =
-                "Please enter a valid email address";
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            newErrors.email = "Please enter a valid email address";
         }
 
-        if (!formData.subject.trim()) {
+        if (!subject) {
             newErrors.subject = "Subject is required";
-        } else if (formData.subject.trim().length < 3) {
-            newErrors.subject =
-                "Subject must contain at least 3 characters";
+        } else if (subject.length < 3) {
+            newErrors.subject = "Subject must contain at least 3 characters";
         }
 
-        if (!formData.message.trim()) {
+        if (!message) {
             newErrors.message = "Message is required";
-        } else if (formData.message.trim().length < 10) {
-            newErrors.message =
-                "Message must contain at least 10 characters";
-        } else if (formData.message.trim().length > 500) {
-            newErrors.message =
-                "Message cannot exceed 500 characters";
+        } else if (message.length < 10) {
+            newErrors.message = "Message must contain at least 10 characters";
+        } else if (message.length > 500) {
+            newErrors.message = "Message cannot exceed 500 characters";
         }
 
         setErrors(newErrors);
@@ -87,7 +84,7 @@ function Contact() {
         return Object.keys(newErrors).length === 0;
     };
 
-
+    // Submit feedback to MongoDB
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -103,14 +100,24 @@ function Contact() {
 
             const feedbackData = {
                 name: formData.name.trim(),
-                email: formData.email.trim(),
+                email: formData.email.trim().toLowerCase(),
                 subject: formData.subject.trim(),
                 message: formData.message.trim(),
                 status: "New",
                 createdAt: new Date().toISOString(),
             };
 
-            await axios.post(API_URL, feedbackData);
+            // POST request using axiosInstance
+            const response = await axiosInstance.post(
+                "/feedback",
+                feedbackData
+            );
+
+            if (response.data?.success === false) {
+                throw new Error(
+                    response.data.message || "Feedback submission failed"
+                );
+            }
 
             setSuccess(
                 "Thank you! Your message has been submitted successfully."
@@ -127,10 +134,12 @@ function Contact() {
         } catch (error) {
             console.error(
                 "Error submitting feedback:",
-                error
+                error.response?.data || error
             );
 
             setServerError(
+                error.response?.data?.message ||
+                error.message ||
                 "Unable to send your message. Please try again."
             );
         } finally {
@@ -144,127 +153,114 @@ function Contact() {
 
             <div className="min-h-screen bg-gray-100">
 
-                <div className="bg-gradient-to-r from-red-900 to-red-400 text-white py-16">
-
-                    <div className="max-w-6xl mx-auto px-6 text-center">
-
-                        <h1 className="text-4xl font-bold mb-3">
+                {/* Hero Section */}
+                <section className="bg-gradient-to-r from-red-900 to-red-400 py-12 text-white sm:py-16">
+                    <div className="mx-auto max-w-6xl px-4 text-center sm:px-6">
+                        <h1 className="mb-3 text-3xl font-bold sm:text-4xl">
                             Contact Us
                         </h1>
 
-                        <p className="text-lg">
+                        <p className="text-base sm:text-lg">
                             We'd love to hear from you.
                             Feel free to contact us anytime.
                         </p>
-
                     </div>
+                </section>
 
-                </div>
+                {/* Contact Content */}
+                <section className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-2 lg:gap-10">
 
-                <div className="max-w-6xl mx-auto px-6 py-12 grid lg:grid-cols-2 gap-10">
-
-                    <div className="bg-white rounded-2xl shadow-lg p-8">
-
-                        <h2 className="text-2xl font-bold text-red-600 mb-6">
+                    {/* Contact Information */}
+                    <div className="rounded-2xl bg-white p-5 shadow-lg sm:p-8">
+                        <h2 className="mb-6 text-xl font-bold text-red-600 sm:text-2xl">
                             Get In Touch
                         </h2>
 
                         <div className="space-y-6">
 
+                            {/* Phone */}
                             <div className="flex items-center gap-4">
-
-                                <div className="bg-red-100 p-4 rounded-full">
-                                    <FaPhoneAlt className="text-red-600 text-xl" />
+                                <div className="shrink-0 rounded-full bg-red-100 p-3 sm:p-4">
+                                    <FaPhoneAlt className="text-xl text-red-600" />
                                 </div>
 
-                                <div>
-                                    <h3 className="font-semibold">
-                                        Phone
-                                    </h3>
-
-                                    <p className="text-gray-600">
+                                <div className="min-w-0">
+                                    <h3 className="font-semibold">Phone</h3>
+                                    <p className="break-words text-gray-600">
                                         +91 98765 43210
                                     </p>
                                 </div>
-
                             </div>
 
+                            {/* Email */}
                             <div className="flex items-center gap-4">
-
-                                <div className="bg-red-100 p-4 rounded-full">
-                                    <FaEnvelope className="text-red-600 text-xl" />
+                                <div className="shrink-0 rounded-full bg-red-100 p-3 sm:p-4">
+                                    <FaEnvelope className="text-xl text-red-600" />
                                 </div>
 
-                                <div>
-                                    <h3 className="font-semibold">
-                                        Email
-                                    </h3>
-
-                                    <p className="text-gray-600">
+                                <div className="min-w-0">
+                                    <h3 className="font-semibold">Email</h3>
+                                    <p className="break-all text-gray-600">
                                         support@givelife.com
                                     </p>
                                 </div>
-
                             </div>
 
+                            {/* Address */}
                             <div className="flex items-center gap-4">
-
-                                <div className="bg-red-100 p-4 rounded-full">
-                                    <FaMapMarkerAlt className="text-red-600 text-xl" />
+                                <div className="shrink-0 rounded-full bg-red-100 p-3 sm:p-4">
+                                    <FaMapMarkerAlt className="text-xl text-red-600" />
                                 </div>
 
-                                <div>
-                                    <h3 className="font-semibold">
-                                        Address
-                                    </h3>
-
+                                <div className="min-w-0">
+                                    <h3 className="font-semibold">Address</h3>
                                     <p className="text-gray-600">
                                         Kochi, Kerala, India
                                     </p>
                                 </div>
-
                             </div>
 
+                            {/* Working Hours */}
                             <div className="flex items-center gap-4">
-
-                                <div className="bg-red-100 p-4 rounded-full">
-                                    <FaClock className="text-red-600 text-xl" />
+                                <div className="shrink-0 rounded-full bg-red-100 p-3 sm:p-4">
+                                    <FaClock className="text-xl text-red-600" />
                                 </div>
 
-                                <div>
-                                    <h3 className="font-semibold">
-                                        Working Hours
-                                    </h3>
-
+                                <div className="min-w-0">
+                                    <h3 className="font-semibold">Working Hours</h3>
                                     <p className="text-gray-600">
                                         Monday - Saturday
                                         <br />
                                         9:00 AM - 6:00 PM
                                     </p>
                                 </div>
-
                             </div>
 
                         </div>
-
                     </div>
 
-                    <div className="bg-white rounded-2xl shadow-lg p-8">
-
-                        <h2 className="text-2xl font-bold text-red-600 mb-6">
+                    {/* Contact Form */}
+                    <div className="rounded-2xl bg-white p-5 shadow-lg sm:p-8">
+                        <h2 className="mb-6 text-xl font-bold text-red-600 sm:text-2xl">
                             Send a Message
                         </h2>
 
-
+                        {/* Success Message */}
                         {success && (
-                            <div className="bg-green-100 border border-green-300 text-green-700 px-4 py-3 rounded-lg mb-5">
+                            <div
+                                role="status"
+                                className="mb-5 rounded-lg border border-green-300 bg-green-100 px-4 py-3 text-sm text-green-700"
+                            >
                                 {success}
                             </div>
                         )}
 
-
+                        {/* Server Error */}
                         {serverError && (
-                            <div className="bg-red-100 border border-red-300 text-red-700 px-4 py-3 rounded-lg mb-5">
+                            <div
+                                role="alert"
+                                className="mb-5 rounded-lg border border-red-300 bg-red-100 px-4 py-3 text-sm text-red-700"
+                            >
                                 {serverError}
                             </div>
                         )}
@@ -275,123 +271,118 @@ function Contact() {
                             className="space-y-5"
                         >
 
-
+                            {/* Name */}
                             <div>
-
                                 <input
                                     type="text"
                                     name="name"
                                     value={formData.name}
                                     onChange={handleChange}
                                     placeholder="Full Name"
-                                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 ${errors.name
-                                        ? "border-red-500 focus:ring-red-300"
-                                        : "focus:border-red-500 focus:ring-red-200"
+                                    autoComplete="name"
+                                    aria-invalid={!!errors.name}
+                                    className={`w-full rounded-lg border px-4 py-3 text-sm focus:outline-none focus:ring-2 sm:text-base ${errors.name
+                                            ? "border-red-500 focus:ring-red-300"
+                                            : "focus:border-red-500 focus:ring-red-200"
                                         }`}
                                 />
 
                                 {errors.name && (
-                                    <p className="text-red-500 text-sm mt-1">
+                                    <p className="mt-1 text-sm text-red-500">
                                         {errors.name}
                                     </p>
                                 )}
-
                             </div>
 
+                            {/* Email */}
                             <div>
-
                                 <input
                                     type="email"
                                     name="email"
                                     value={formData.email}
                                     onChange={handleChange}
                                     placeholder="Email Address"
-                                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 ${errors.email
-                                        ? "border-red-500 focus:ring-red-300"
-                                        : "focus:border-red-500 focus:ring-red-200"
+                                    autoComplete="email"
+                                    aria-invalid={!!errors.email}
+                                    className={`w-full rounded-lg border px-4 py-3 text-sm focus:outline-none focus:ring-2 sm:text-base ${errors.email
+                                            ? "border-red-500 focus:ring-red-300"
+                                            : "focus:border-red-500 focus:ring-red-200"
                                         }`}
                                 />
 
                                 {errors.email && (
-                                    <p className="text-red-500 text-sm mt-1">
+                                    <p className="mt-1 text-sm text-red-500">
                                         {errors.email}
                                     </p>
                                 )}
-
                             </div>
 
+                            {/* Subject */}
                             <div>
-
                                 <input
                                     type="text"
                                     name="subject"
                                     value={formData.subject}
                                     onChange={handleChange}
                                     placeholder="Subject"
-                                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 ${errors.subject
-                                        ? "border-red-500 focus:ring-red-300"
-                                        : "focus:border-red-500 focus:ring-red-200"
+                                    aria-invalid={!!errors.subject}
+                                    className={`w-full rounded-lg border px-4 py-3 text-sm focus:outline-none focus:ring-2 sm:text-base ${errors.subject
+                                            ? "border-red-500 focus:ring-red-300"
+                                            : "focus:border-red-500 focus:ring-red-200"
                                         }`}
                                 />
 
                                 {errors.subject && (
-                                    <p className="text-red-500 text-sm mt-1">
+                                    <p className="mt-1 text-sm text-red-500">
                                         {errors.subject}
                                     </p>
                                 )}
-
                             </div>
 
-
+                            {/* Message */}
                             <div>
-
                                 <textarea
-                                    rows="5"
+                                    rows={5}
                                     name="message"
                                     value={formData.message}
                                     onChange={handleChange}
                                     placeholder="Your Message"
-                                    maxLength="500"
-                                    className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 resize-none ${errors.message
-                                        ? "border-red-500 focus:ring-red-300"
-                                        : "focus:border-red-500 focus:ring-red-200"
+                                    maxLength={500}
+                                    aria-invalid={!!errors.message}
+                                    className={`w-full resize-none rounded-lg border px-4 py-3 text-sm focus:outline-none focus:ring-2 sm:text-base ${errors.message
+                                            ? "border-red-500 focus:ring-red-300"
+                                            : "focus:border-red-500 focus:ring-red-200"
                                         }`}
                                 />
 
-                                <div className="flex justify-between">
+                                <div className="flex justify-between gap-2">
+                                    <div>
+                                        {errors.message && (
+                                            <p className="mt-1 text-sm text-red-500">
+                                                {errors.message}
+                                            </p>
+                                        )}
+                                    </div>
 
-                                    {errors.message ? (
-                                        <p className="text-red-500 text-sm mt-1">
-                                            {errors.message}
-                                        </p>
-                                    ) : (
-                                        <span></span>
-                                    )}
-
-                                    <p className="text-gray-400 text-sm mt-1">
+                                    <p className="mt-1 shrink-0 text-sm text-gray-400">
                                         {formData.message.length}/500
                                     </p>
-
                                 </div>
-
                             </div>
 
+                            {/* Submit Button */}
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full bg-red-800 hover:bg-red-700 disabled:bg-gray-400 text-white py-3 rounded-lg font-semibold transition"
+                                className="w-full rounded-lg bg-red-800 py-3 font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-400"
                             >
-                                {loading
-                                    ? "Sending..."
-                                    : "Send Message"}
+                                {loading ? "Sending..." : "Send Message"}
                             </button>
 
                         </form>
-
                     </div>
 
-                </div>
-
+                </section>
             </div>
         </>
     );

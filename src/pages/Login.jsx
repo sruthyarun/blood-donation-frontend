@@ -5,6 +5,7 @@ import { loginUser } from "../redux/userSlice";
 import login from "../assets/login.jpg";
 import { FaArrowLeft } from "react-icons/fa";
 import axiosInstance from "../API/axiosInstance";
+import Swal from "sweetalert2";
 
 function Login() {
     const navigate = useNavigate();
@@ -23,16 +24,65 @@ function Login() {
         });
     };
 
+    // SUCCESS POPUP
+    const showLoginSuccess = (role, dashboard) => {
+        Swal.fire({
+            icon: "success",
+            title: "Login Successful!",
+            text: `Welcome back! You are logged in as ${role}.`,
+            showConfirmButton: false,
+            timer: 1500,
+            timerProgressBar: true,
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+        }).then(() => {
+            navigate(dashboard);
+        });
+    };
+
+    // ERROR POPUP
+    const showLoginError = (message) => {
+        Swal.fire({
+            icon: "error",
+            title: "Login Failed!",
+            text: message,
+            confirmButtonText: "Try Again",
+            confirmButtonColor: "#dc2626",
+            allowOutsideClick: false,
+        });
+    };
+
+    // WARNING POPUP
+    const showLoginWarning = (message) => {
+        Swal.fire({
+            icon: "warning",
+            title: "Attention!",
+            text: message,
+            confirmButtonText: "OK",
+            confirmButtonColor: "#dc2626",
+        });
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
 
+        // VALIDATION
         if (!loginData.role) {
-            alert("Please select a role.");
+            showLoginWarning("Please select a role.");
             return;
         }
 
-        // Admin login through the MongoDB backend
+        if (!loginData.email.trim()) {
+            showLoginWarning("Please enter your email address.");
+            return;
+        }
+
+        if (!loginData.password) {
+            showLoginWarning("Please enter your password.");
+            return;
+        }
+
+        // ADMIN LOGIN
         if (loginData.role === "Admin") {
             try {
                 const response = await axiosInstance.post(
@@ -46,14 +96,12 @@ function Login() {
                 const { success, token, admin } = response.data;
 
                 if (!success || !token || admin?.role !== "admin") {
-                    alert("Invalid admin login response.");
+                    showLoginError("Invalid admin login response.");
                     return;
                 }
 
-                // Store the token for the current browser session
                 sessionStorage.setItem("adminToken", token);
 
-                // Keep your existing Redux login flow
                 const user = {
                     ...admin,
                     role: "Admin",
@@ -66,15 +114,15 @@ function Login() {
                     JSON.stringify(user)
                 );
 
-                alert("Admin login successful!");
-                navigate("/admin-dashboard");
+                showLoginSuccess("Admin", "/admin-dashboard");
+
             } catch (error) {
                 console.error(
                     "Admin login error:",
                     error.response?.data || error.message
                 );
 
-                alert(
+                showLoginError(
                     error.response?.data?.message ||
                     "Admin login failed. Please check your credentials."
                 );
@@ -83,6 +131,7 @@ function Login() {
             return;
         }
 
+        // DONOR LOGIN
         if (loginData.role === "Donor") {
             try {
                 const response = await axiosInstance.post(
@@ -96,7 +145,7 @@ function Login() {
                 const { success, token, user } = response.data;
 
                 if (!success || !token || !user) {
-                    alert("Invalid login response.");
+                    showLoginError("Invalid donor login response.");
                     return;
                 }
 
@@ -109,14 +158,20 @@ function Login() {
                     JSON.stringify(user)
                 );
 
-                alert("Donor login successful!");
-                navigate("/donor-dashboard");
-            } catch (error) {
-                console.error("Donor login status:", error.response?.status);
-                console.error("Donor login response:", error.response?.data);
-                console.error("Donor login error:", error.message);
+                showLoginSuccess("Donor", "/donor-dashboard");
 
-                alert(
+            } catch (error) {
+                console.error(
+                    "Donor login status:",
+                    error.response?.status
+                );
+
+                console.error(
+                    "Donor login response:",
+                    error.response?.data
+                );
+
+                showLoginError(
                     error.response?.data?.message ||
                     "Unable to log in. Please check your credentials."
                 );
@@ -125,7 +180,7 @@ function Login() {
             return;
         }
 
-        // Recipient login through the MongoDB backend
+        // RECIPIENT LOGIN
         if (loginData.role === "Recipient") {
             try {
                 const response = await axiosInstance.post(
@@ -144,7 +199,7 @@ function Login() {
                     !user ||
                     user.role !== "Recipient"
                 ) {
-                    alert("Invalid recipient login response.");
+                    showLoginError("Invalid recipient login response.");
                     return;
                 }
 
@@ -157,8 +212,8 @@ function Login() {
                     JSON.stringify(user)
                 );
 
-                alert("Recipient login successful!");
-                navigate("/recipient-dashboard");
+                showLoginSuccess("Recipient", "/recipient-dashboard");
+
             } catch (error) {
                 console.error(
                     "Recipient login status:",
@@ -170,7 +225,7 @@ function Login() {
                     error.response?.data
                 );
 
-                alert(
+                showLoginError(
                     error.response?.data?.message ||
                     "Recipient login failed. Please check your credentials."
                 );
@@ -179,6 +234,7 @@ function Login() {
             return;
         }
 
+        // HOSPITAL LOGIN
         if (loginData.role === "Hospital") {
             try {
                 const response = await axiosInstance.post(
@@ -192,7 +248,7 @@ function Login() {
                 const { success, token, user } = response.data;
 
                 if (!success || !token || !user) {
-                    alert("Invalid hospital login response.");
+                    showLoginError("Invalid hospital login response.");
                     return;
                 }
 
@@ -210,15 +266,15 @@ function Login() {
                     JSON.stringify(hospitalUser)
                 );
 
-                alert("Hospital login successful!");
-                navigate("/hospital-dashboard");
+                showLoginSuccess("Hospital", "/hospital-dashboard");
+
             } catch (error) {
                 console.error(
                     "Hospital login error:",
                     error.response?.data || error.message
                 );
 
-                alert(
+                showLoginError(
                     error.response?.data?.message ||
                     "Hospital login failed. Please check your credentials."
                 );
@@ -227,9 +283,7 @@ function Login() {
             return;
         }
 
-
-
-        // Blood Bank login through MongoDB Atlas
+        // BLOOD BANK LOGIN
         if (loginData.role === "Blood Bank") {
             try {
                 const response = await axiosInstance.post(
@@ -240,13 +294,18 @@ function Login() {
                     }
                 );
 
-                // Backend returns "bloodBank", not "user"
-
                 const { success, token, user, message } = response.data;
 
                 if (!success || !token || !user) {
-                    console.error("Invalid Blood Bank login response:", response.data);
-                    alert(message || "Invalid Blood Bank login response.");
+                    console.error(
+                        "Invalid Blood Bank login response:",
+                        response.data
+                    );
+
+                    showLoginError(
+                        message || "Invalid Blood Bank login response."
+                    );
+
                     return;
                 }
 
@@ -256,22 +315,17 @@ function Login() {
                     role: "Blood Bank",
                 };
 
-
-                // Save the authentication token
                 sessionStorage.setItem("bloodBankToken", token);
 
-                // Update Redux
                 dispatch(loginUser(bloodBankUser));
 
-                // Save the logged-in user
                 localStorage.setItem(
                     "loggedInUser",
                     JSON.stringify(bloodBankUser)
                 );
 
-                alert("Blood Bank login successful!");
+                showLoginSuccess("Blood Bank", "/bloodbank-dashboard");
 
-                navigate("/bloodbank-dashboard");
             } catch (error) {
                 console.error(
                     "Blood Bank login status:",
@@ -283,7 +337,7 @@ function Login() {
                     error.response?.data || error.message
                 );
 
-                alert(
+                showLoginError(
                     error.response?.data?.message ||
                     "Blood Bank login failed. Please check your credentials."
                 );
@@ -292,21 +346,19 @@ function Login() {
             return;
         }
 
-
-        // Other roles need their own backend login endpoints.
-        alert(
+        // OTHER ROLES
+        showLoginError(
             `${loginData.role} login is not yet connected to the MongoDB authentication API.`
         );
     };
 
     return (
         <>
-
             <div className="min-h-screen bg-gradient-to-r from-red-100 via-white to-pink-100 flex items-center justify-center px-4">
 
                 <div className="w-full max-w-5xl bg-white rounded-3xl shadow-2xl overflow-hidden grid md:grid-cols-2">
 
-                    {/* Left Section */}
+                    {/* LEFT SECTION */}
                     <div
                         className="bg-cover bg-center"
                         style={{
@@ -314,7 +366,9 @@ function Login() {
                         }}
                     >
                         <div className="w-full h-full bg-red-900/50 flex items-center justify-center p-8">
+
                             <div className="text-center text-white">
+
                                 <h1 className="text-4xl font-bold">
                                     Blood Donation System
                                 </h1>
@@ -324,18 +378,18 @@ function Login() {
                                     <br />
                                     Together we can save lives by donating blood.
                                 </p>
+
                             </div>
+
                         </div>
                     </div>
 
-                    {/* Right Section */}
+                    {/* RIGHT SECTION */}
                     <div className="p-10">
-
 
                         <h2 className="text-3xl font-bold text-gray-700 mb-2">
                             Welcome Back
                         </h2>
-
 
                         <p className="text-gray-500 mb-8">
                             Login to your account
@@ -345,7 +399,8 @@ function Login() {
                             onSubmit={handleSubmit}
                             className="space-y-5"
                         >
-                            {/* Role */}
+
+                            {/* ROLE */}
                             <div>
                                 <label className="block mb-2 font-semibold">
                                     Login As
@@ -367,7 +422,7 @@ function Login() {
                                 </select>
                             </div>
 
-                            {/* Email */}
+                            {/* EMAIL */}
                             <div>
                                 <label className="block mb-2 font-semibold">
                                     Email
@@ -384,7 +439,7 @@ function Login() {
                                 />
                             </div>
 
-                            {/* Password */}
+                            {/* PASSWORD */}
                             <div>
                                 <label className="block mb-2 font-semibold">
                                     Password
@@ -401,7 +456,9 @@ function Login() {
                                 />
                             </div>
 
+                            {/* REMEMBER ME AND FORGOT PASSWORD */}
                             <div className="flex justify-between items-center">
+
                                 <label className="flex items-center gap-2">
                                     <input type="checkbox" />
                                     Remember Me
@@ -413,16 +470,20 @@ function Login() {
                                 >
                                     Forgot Password?
                                 </Link>
+
                             </div>
 
+                            {/* LOGIN BUTTON */}
                             <button
                                 type="submit"
                                 className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-semibold transition"
                             >
                                 Login
                             </button>
+
                         </form>
 
+                        {/* REGISTER LINK */}
                         <p className="text-center mt-6">
                             Don't have an account?
 
@@ -439,9 +500,7 @@ function Login() {
 
                 </div>
 
-
-
-            </div >
+            </div>
         </>
     );
 }

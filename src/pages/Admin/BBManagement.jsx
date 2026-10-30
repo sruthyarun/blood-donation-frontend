@@ -1,5 +1,8 @@
+
+
 import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
+
 import {
     FaSearch,
     FaHospital,
@@ -11,114 +14,159 @@ import {
     FaTimes,
     FaBuilding,
     FaBan,
-    FaEnvelope,
     FaTimesCircle,
 } from "react-icons/fa";
 
 import AdminPanel from "../../components/AdminPanel";
 
 const API_URL =
-    "https://blood-donation-backend-olwl.onrender.com/bloodBanks";
+    "https://blood-donation-backend-olwl.onrender.com/api/bloodBanks";
+
+// MongoDB ID helper
+const getBbankId = (bbank) => bbank?._id || bbank?.id;
+
+// Handle different API response formats
+const extractBbanks = (data) => {
+    if (Array.isArray(data)) return data;
+
+    if (Array.isArray(data?.bloodBanks)) {
+        return data.bloodBanks;
+    }
+
+    if (Array.isArray(data?.data)) {
+        return data.data;
+    }
+
+    if (Array.isArray(data?.data?.bloodBanks)) {
+        return data.data.bloodBanks;
+    }
+
+    return [];
+};
 
 function BBManagementADm() {
     const [bbanks, setBbanks] = useState([]);
     const [search, setSearch] = useState("");
     const [selectedBbank, setSelectedBbank] = useState(null);
     const [loading, setLoading] = useState(false);
-
+    const [error, setError] = useState("");
 
     useEffect(() => {
         fetchBbanks();
     }, []);
 
+    // Fetch blood banks
     const fetchBbanks = async () => {
         try {
             setLoading(true);
+            setError("");
 
             const response = await axios.get(API_URL);
 
-            setBbanks(response.data);
+            const data = extractBbanks(response.data);
+
+            setBbanks(data);
         } catch (error) {
-            console.log("Error fetching blood banks:", error);
+            console.error(
+                "Error fetching blood banks:",
+                error.response?.data || error
+            );
+
+            setError(
+                error.response?.data?.message ||
+                "Unable to load blood banks. Please try again."
+            );
         } finally {
             setLoading(false);
         }
     };
 
-
+    // Search
     const filteredBbanks = useMemo(() => {
         const searchValue = search.toLowerCase().trim();
 
-        return bbanks.filter(
-            (bbank) =>
-                bbank.bloodBankName
-                    ?.toLowerCase()
-                    .includes(searchValue) ||
-                bbank.email
-                    ?.toLowerCase()
-                    .includes(searchValue) ||
-                bbank.phone
-                    ?.toLowerCase()
-                    .includes(searchValue) ||
-                bbank.city
-                    ?.toLowerCase()
-                    .includes(searchValue) ||
-                bbank.district
-                    ?.toLowerCase()
-                    .includes(searchValue) ||
-                bbank.registrationNumber
-                    ?.toLowerCase()
+        return bbanks.filter((bbank) => {
+            const searchableFields = [
+                bbank.bloodBankName,
+                bbank.bankName,
+                bbank.email,
+                bbank.phone,
+                bbank.city,
+                bbank.district,
+                bbank.registrationNumber,
+                bbank.licenseNumber,
+                bbank.status,
+            ];
+
+            return searchableFields.some((field) =>
+                String(field || "")
+                    .toLowerCase()
                     .includes(searchValue)
-        );
+            );
+        });
     }, [bbanks, search]);
 
-
+    // Statistics
     const totalBbanks = bbanks.length;
 
     const approvedCount = bbanks.filter(
-        (bbank) => bbank.status === "Approved"
+        (bbank) => bbank.status?.toLowerCase() === "approved"
     ).length;
 
     const pendingCount = bbanks.filter(
-        (bbank) => bbank.status === "Pending"
+        (bbank) => bbank.status?.toLowerCase() === "pending"
     ).length;
 
     const rejectedCount = bbanks.filter(
-        (bbank) => bbank.status === "Rejected"
+        (bbank) => bbank.status?.toLowerCase() === "rejected"
     ).length;
 
     const blockedCount = bbanks.filter(
-        (bbank) => bbank.status === "Blocked"
+        (bbank) => bbank.status?.toLowerCase() === "blocked"
     ).length;
 
-
+    // Update status
     const updateStatus = async (id, status) => {
         try {
-            const bbank = bbanks.find(
-                (item) => item.id === id
-            );
+            if (!id) {
+                alert("Blood bank ID is missing.");
+                return;
+            }
 
-            if (!bbank) return;
-
-            await axios.put(`${API_URL}/${id}`, {
-                ...bbank,
+            // PATCH updates only the status field
+            await axios.patch(`${API_URL}/${id}`, {
                 status,
             });
 
-            await fetchBbanks();
+            // Update local list
+            setBbanks((previous) =>
+                previous.map((bbank) =>
+                    getBbankId(bbank) === id
+                        ? { ...bbank, status }
+                        : bbank
+                )
+            );
 
-            if (selectedBbank?.id === id) {
-                setSelectedBbank({
-                    ...bbank,
-                    status,
-                });
-            }
+            // Update opened profile
+            setSelectedBbank((previous) =>
+                previous && getBbankId(previous) === id
+                    ? { ...previous, status }
+                    : previous
+            );
         } catch (error) {
-            console.log("Error updating blood bank:", error);
+            console.error(
+                "Error updating blood bank:",
+                error.response?.data || error
+            );
+
+            alert(
+                error.response?.data?.message ||
+                "Unable to update blood bank status."
+            );
         }
     };
 
-
+    // Delete blood bank
     const deleteBbank = async (id) => {
         const confirmDelete = window.confirm(
             "Are you sure you want to delete this blood bank?"
@@ -129,34 +177,46 @@ function BBManagementADm() {
         try {
             await axios.delete(`${API_URL}/${id}`);
 
-            await fetchBbanks();
+            setBbanks((previous) =>
+                previous.filter(
+                    (bbank) => getBbankId(bbank) !== id
+                )
+            );
 
-            if (selectedBbank?.id === id) {
+            if (
+                selectedBbank &&
+                getBbankId(selectedBbank) === id
+            ) {
                 setSelectedBbank(null);
             }
+
+            alert("Blood bank deleted successfully.");
         } catch (error) {
-            console.log("Error deleting blood bank:", error);
+            console.error(
+                "Error deleting blood bank:",
+                error.response?.data || error
+            );
+
+            alert(
+                error.response?.data?.message ||
+                "Unable to delete blood bank."
+            );
         }
     };
 
-
-    const viewBbank = (bbank) => {
-        setSelectedBbank(bbank);
-    };
-
-
+    // Status colors
     const getStatusColor = (status) => {
-        switch (status) {
-            case "Approved":
+        switch (status?.toLowerCase()) {
+            case "approved":
                 return "bg-green-100 text-green-700";
 
-            case "Pending":
+            case "pending":
                 return "bg-yellow-100 text-yellow-700";
 
-            case "Rejected":
+            case "rejected":
                 return "bg-red-100 text-red-700";
 
-            case "Blocked":
+            case "blocked":
                 return "bg-gray-200 text-gray-700";
 
             default:
@@ -169,9 +229,10 @@ function BBManagementADm() {
 
             <AdminPanel />
 
-            <div className="min-h-screen bg-gray-100 p-8 flex-1">
+            <div className="min-h-screen bg-gray-100 p-5 md:p-8 flex-1">
 
-                <div className="flex flex-col md:flex-row justify-between items-center mb-8">
+                {/* Header */}
+                <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
 
                     <div>
                         <h1 className="text-3xl font-bold text-gray-800">
@@ -184,7 +245,8 @@ function BBManagementADm() {
                         </p>
                     </div>
 
-                    <div className="flex items-center bg-white shadow rounded-lg px-4 py-3 mt-4 md:mt-0 w-full md:w-80">
+                    {/* Search */}
+                    <div className="flex items-center bg-white shadow rounded-lg px-4 py-3 w-full md:w-80">
 
                         <FaSearch className="text-gray-500" />
 
@@ -202,80 +264,71 @@ function BBManagementADm() {
 
                 </div>
 
+                {/* Statistics */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-8">
 
-                    <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-red-600">
+                    <StatCard
+                        title="Total Blood Banks"
+                        count={totalBbanks}
+                        color="border-red-600"
+                        textColor="text-red-600"
+                    />
 
-                        <h2 className="text-gray-500">
-                            Total Blood Banks
-                        </h2>
+                    <StatCard
+                        title="Approved"
+                        count={approvedCount}
+                        color="border-green-600"
+                        textColor="text-green-600"
+                    />
 
-                        <p className="text-4xl font-bold text-red-600 mt-2">
-                            {totalBbanks}
-                        </p>
+                    <StatCard
+                        title="Pending"
+                        count={pendingCount}
+                        color="border-yellow-500"
+                        textColor="text-yellow-600"
+                    />
 
-                    </div>
+                    <StatCard
+                        title="Rejected"
+                        count={rejectedCount}
+                        color="border-red-500"
+                        textColor="text-red-500"
+                    />
 
-                    <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-600">
-
-                        <h2 className="text-gray-500">
-                            Approved
-                        </h2>
-
-                        <p className="text-4xl font-bold text-green-600 mt-2">
-                            {approvedCount}
-                        </p>
-
-                    </div>
-
-
-                    <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-yellow-500">
-
-                        <h2 className="text-gray-500">
-                            Pending
-                        </h2>
-
-                        <p className="text-4xl font-bold text-yellow-600 mt-2">
-                            {pendingCount}
-                        </p>
-
-                    </div>
-
-                    <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-red-500">
-
-                        <h2 className="text-gray-500">
-                            Rejected
-                        </h2>
-
-                        <p className="text-4xl font-bold text-red-500 mt-2">
-                            {rejectedCount}
-                        </p>
-
-                    </div>
-
-                    <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-gray-600">
-
-                        <h2 className="text-gray-500">
-                            Blocked
-                        </h2>
-
-                        <p className="text-4xl font-bold text-gray-600 mt-2">
-                            {blockedCount}
-                        </p>
-
-                    </div>
+                    <StatCard
+                        title="Blocked"
+                        count={blockedCount}
+                        color="border-gray-600"
+                        textColor="text-gray-600"
+                    />
 
                 </div>
 
+                {/* Blood Bank List */}
                 <div className="space-y-4">
 
                     {loading ? (
 
                         <div className="bg-white rounded-xl shadow p-10 text-center">
-
                             <p className="text-gray-500">
                                 Loading blood banks...
                             </p>
+                        </div>
+
+                    ) : error ? (
+
+                        <div className="bg-white rounded-xl shadow p-10 text-center">
+
+                            <p className="text-red-600 mb-4">
+                                {error}
+                            </p>
+
+                            <button
+                                onClick={fetchBbanks}
+                                className="bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700"
+                            >
+                                Try Again
+                            </button>
 
                         </div>
 
@@ -293,223 +346,166 @@ function BBManagementADm() {
 
                     ) : (
 
-                        filteredBbanks.map((bbank) => (
+                        filteredBbanks.map((bbank) => {
+                            const id = getBbankId(bbank);
 
-                            <div
-                                key={bbank.id}
-                                className="bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-5"
-                            >
+                            return (
+                                <div
+                                    key={id}
+                                    className="bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-5"
+                                >
 
-                                <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
+                                    <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
 
-                                    <div className="flex items-center gap-4 flex-1">
+                                        {/* Blood Bank Details */}
+                                        <div className="flex items-center gap-4 flex-1">
 
-                                        <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                                            <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                                                <FaHospital className="text-red-600 text-2xl" />
+                                            </div>
 
-                                            <FaHospital className="text-red-600 text-2xl" />
+                                            <div>
 
-                                        </div>
+                                                <h2 className="text-lg font-bold text-gray-800">
+                                                    {bbank.bloodBankName ||
+                                                        bbank.bankName ||
+                                                        "Unknown Blood Bank"}
+                                                </h2>
 
-                                        <div>
+                                                <p className="text-sm text-gray-500">
+                                                    Blood Bank ID: {id}
+                                                </p>
 
-                                            <h2 className="text-lg font-bold text-gray-800">
+                                                <p className="text-sm text-gray-500">
+                                                    {bbank.email || "No email"}
+                                                </p>
 
-                                                {bbank.bloodBankName ||
-                                                    "Unknown Blood Bank"}
+                                                <div className="flex flex-wrap gap-3 mt-2 text-sm">
 
-                                            </h2>
+                                                    <span className="flex items-center gap-1">
+                                                        <FaPhoneAlt className="text-red-600" />
+                                                        {bbank.phone || "N/A"}
+                                                    </span>
 
-                                            <p className="text-sm text-gray-500">
+                                                    <span className="flex items-center gap-1">
+                                                        <FaMapMarkerAlt className="text-red-600" />
+                                                        {bbank.city ||
+                                                            bbank.district ||
+                                                            "N/A"}
+                                                    </span>
 
-                                                Blood Bank ID:{" "}
-                                                {bbank.id}
-
-                                            </p>
-
-                                            <p className="text-sm text-gray-500">
-
-                                                {bbank.email ||
-                                                    "No email"}
-
-                                            </p>
-
-                                            <div className="flex flex-wrap gap-3 mt-2 text-sm">
-
-                                                <span className="flex items-center gap-1">
-
-                                                    <FaPhoneAlt className="text-red-600" />
-
-                                                    {bbank.phone ||
-                                                        "N/A"}
-
-                                                </span>
-
-                                                <span className="flex items-center gap-1">
-
-                                                    <FaMapMarkerAlt className="text-red-600" />
-
-                                                    {bbank.city ||
-                                                        bbank.district ||
-                                                        "N/A"}
-
-                                                </span>
+                                                </div>
 
                                             </div>
 
                                         </div>
 
-                                    </div>
-                                    <div className="flex flex-wrap gap-3">
+                                        {/* Badges */}
+                                        <div className="flex flex-wrap gap-3">
 
-                                        <span className="bg-red-100 text-red-600 px-4 py-2 rounded-full font-semibold">
+                                            <span className="bg-red-100 text-red-600 px-4 py-2 rounded-full font-semibold">
+                                                <FaBuilding className="inline mr-1" />
+                                                Blood Bank
+                                            </span>
 
-                                            <FaBuilding className="inline mr-1" />
+                                            <span className="bg-blue-100 text-blue-700 px-4 py-2 rounded-full font-semibold">
+                                                License: {bbank.registrationNumber ||
+                                                    bbank.licenseNumber ||
+                                                    "N/A"}
+                                            </span>
 
-                                            Blood Bank
-
-                                        </span>
-
-                                        <span className="bg-blue-100 text-blue-700 px-4 py-2 rounded-full font-semibold">
-
-                                            License:{" "}
-                                            {bbank.registrationNumber ||
-                                                "N/A"}
-
-                                        </span>
-
-                                        <span
-                                            className={`px-4 py-2 rounded-full font-semibold ${getStatusColor(
-                                                bbank.status
-                                            )}`}
-                                        >
-
-                                            {bbank.status ||
-                                                "Pending"}
-
-                                        </span>
-
-                                    </div>
-
-                                    <div className="flex justify-end w-full xl:w-auto">
-
-                                        <div className="flex items-center gap-2">
-
-
-
-                                            <button
-                                                onClick={() =>
-                                                    viewBbank(
-                                                        bbank
-                                                    )
-                                                }
-                                                title="View Profile"
-                                                className="w-10 h-10 flex items-center justify-center rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white transition"
+                                            <span
+                                                className={`px-4 py-2 rounded-full font-semibold ${getStatusColor(
+                                                    bbank.status
+                                                )}`}
                                             >
-                                                <FaEye />
-                                            </button>
+                                                {bbank.status || "Pending"}
+                                            </span>
 
+                                        </div>
 
+                                        {/* Action Buttons */}
+                                        <div className="flex justify-end w-full xl:w-auto">
 
-                                            {bbank.status ===
-                                                "Pending" && (
+                                            <div className="flex items-center gap-2">
 
-                                                    <button
-                                                        onClick={() =>
-                                                            updateStatus(
-                                                                bbank.id,
-                                                                "Approved"
-                                                            )
-                                                        }
-                                                        title="Approve Blood Bank"
-                                                        className="w-10 h-10 flex items-center justify-center rounded-lg bg-green-100 text-green-600 hover:bg-green-600 hover:text-white transition"
-                                                    >
-                                                        <FaCheck />
-                                                    </button>
+                                                <button
+                                                    onClick={() =>
+                                                        setSelectedBbank(bbank)
+                                                    }
+                                                    title="View Profile"
+                                                    className="w-10 h-10 flex items-center justify-center rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white transition"
+                                                >
+                                                    <FaEye />
+                                                </button>
 
+                                                {bbank.status?.toLowerCase() === "pending" && (
+                                                    <>
+                                                        <button
+                                                            onClick={() =>
+                                                                updateStatus(id, "Approved")
+                                                            }
+                                                            title="Approve Blood Bank"
+                                                            className="w-10 h-10 flex items-center justify-center rounded-lg bg-green-100 text-green-600 hover:bg-green-600 hover:text-white transition"
+                                                        >
+                                                            <FaCheck />
+                                                        </button>
+
+                                                        <button
+                                                            onClick={() =>
+                                                                updateStatus(id, "Rejected")
+                                                            }
+                                                            title="Reject Blood Bank"
+                                                            className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition"
+                                                        >
+                                                            <FaTimes />
+                                                        </button>
+                                                    </>
                                                 )}
 
-
-
-                                            {bbank.status ===
-                                                "Pending" && (
-
+                                                {bbank.status?.toLowerCase() === "approved" && (
                                                     <button
                                                         onClick={() =>
-                                                            updateStatus(
-                                                                bbank.id,
-                                                                "Rejected"
-                                                            )
-                                                        }
-                                                        title="Reject Blood Bank"
-                                                        className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition"
-                                                    >
-                                                        <FaTimes />
-                                                    </button>
-
-                                                )}
-
-
-
-                                            {bbank.status ===
-                                                "Approved" && (
-
-                                                    <button
-                                                        onClick={() =>
-                                                            updateStatus(
-                                                                bbank.id,
-                                                                "Blocked"
-                                                            )
+                                                            updateStatus(id, "Blocked")
                                                         }
                                                         title="Block Blood Bank"
                                                         className="w-10 h-10 flex items-center justify-center rounded-lg bg-yellow-100 text-yellow-600 hover:bg-yellow-500 hover:text-white transition"
                                                     >
                                                         <FaBan />
                                                     </button>
-
                                                 )}
 
-
-                                            {bbank.status ===
-                                                "Blocked" && (
-
+                                                {bbank.status?.toLowerCase() === "blocked" && (
                                                     <button
                                                         onClick={() =>
-                                                            updateStatus(
-                                                                bbank.id,
-                                                                "Approved"
-                                                            )
+                                                            updateStatus(id, "Approved")
                                                         }
                                                         title="Unblock Blood Bank"
                                                         className="w-10 h-10 flex items-center justify-center rounded-lg bg-green-100 text-green-600 hover:bg-green-600 hover:text-white transition"
                                                     >
                                                         <FaCheck />
                                                     </button>
-
                                                 )}
 
+                                                <button
+                                                    onClick={() =>
+                                                        deleteBbank(id)
+                                                    }
+                                                    title="Delete Blood Bank"
+                                                    className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition"
+                                                >
+                                                    <FaTrash />
+                                                </button>
 
-
-                                            <button
-                                                onClick={() =>
-                                                    deleteBbank(
-                                                        bbank.id
-                                                    )
-                                                }
-                                                title="Delete Blood Bank"
-                                                className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition"
-                                            >
-                                                <FaTrash />
-                                            </button>
+                                            </div>
 
                                         </div>
 
                                     </div>
 
                                 </div>
-
-                            </div>
-
-                        ))
+                            );
+                        })
 
                     )}
 
@@ -517,33 +513,28 @@ function BBManagementADm() {
 
             </div>
 
+            {/* Blood Bank Profile Modal */}
             {selectedBbank && (
 
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
 
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
 
-
-
+                        {/* Modal Header */}
                         <div className="flex justify-between items-center p-6 border-b">
 
                             <div>
-
                                 <h2 className="text-2xl font-bold text-gray-800">
                                     Blood Bank Profile
                                 </h2>
 
                                 <p className="text-gray-500 text-sm">
-                                    Blood Bank ID:{" "}
-                                    {selectedBbank.id}
+                                    Blood Bank ID: {getBbankId(selectedBbank)}
                                 </p>
-
                             </div>
 
                             <button
-                                onClick={() =>
-                                    setSelectedBbank(null)
-                                }
+                                onClick={() => setSelectedBbank(null)}
                                 className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-red-100 hover:text-red-600"
                             >
                                 <FaTimesCircle />
@@ -551,110 +542,89 @@ function BBManagementADm() {
 
                         </div>
 
-
-
+                        {/* Modal Body */}
                         <div className="p-6">
 
                             <div className="flex items-center gap-4 mb-6">
 
                                 <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center">
-
                                     <FaHospital className="text-red-600 text-3xl" />
-
                                 </div>
 
                                 <div>
-
                                     <h3 className="text-2xl font-bold text-gray-800">
-
-                                        {selectedBbank.bloodBankName}
-
+                                        {selectedBbank.bloodBankName ||
+                                            selectedBbank.bankName ||
+                                            "Blood Bank"}
                                     </h3>
 
                                     <p className="text-gray-500">
-
-                                        {selectedBbank.email ||
-                                            "No email"}
-
+                                        {selectedBbank.email || "No email"}
                                     </p>
-
                                 </div>
 
                             </div>
-
-
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                                 <ProfileItem
                                     label="Blood Bank Name"
-                                    value={
-                                        selectedBbank.bloodBankName
-                                    }
+                                    value={selectedBbank.bloodBankName ||
+                                        selectedBbank.bankName}
+                                />
+
+                                <ProfileItem
+                                    label="Manager / Contact Person"
+                                    value={selectedBbank.managerName ||
+                                        selectedBbank.contactPerson}
                                 />
 
                                 <ProfileItem
                                     label="Phone"
-                                    value={
-                                        selectedBbank.phone
-                                    }
+                                    value={selectedBbank.phone}
                                 />
 
                                 <ProfileItem
                                     label="Email"
-                                    value={
-                                        selectedBbank.email
-                                    }
+                                    value={selectedBbank.email}
                                 />
 
                                 <ProfileItem
                                     label="Registration / License Number"
-                                    value={
-                                        selectedBbank.registrationNumber
-                                    }
+                                    value={selectedBbank.registrationNumber ||
+                                        selectedBbank.licenseNumber}
                                 />
 
                                 <ProfileItem
                                     label="City"
-                                    value={
-                                        selectedBbank.city
-                                    }
+                                    value={selectedBbank.city}
                                 />
 
                                 <ProfileItem
                                     label="District"
-                                    value={
-                                        selectedBbank.district
-                                    }
+                                    value={selectedBbank.district}
                                 />
 
                                 <ProfileItem
                                     label="State"
-                                    value={
-                                        selectedBbank.state
-                                    }
+                                    value={selectedBbank.state}
                                 />
 
                                 <ProfileItem
                                     label="Pincode"
-                                    value={
-                                        selectedBbank.pincode
-                                    }
+                                    value={selectedBbank.pincode}
                                 />
 
                             </div>
 
                             <div className="mt-4">
-
                                 <ProfileItem
                                     label="Address"
-                                    value={
-                                        selectedBbank.address
-                                    }
+                                    value={selectedBbank.address}
                                 />
-
                             </div>
 
+                            {/* Registration Status */}
                             <div className="mt-6 p-4 bg-gray-50 rounded-xl">
 
                                 <p className="text-sm text-gray-500 mb-2">
@@ -666,24 +636,20 @@ function BBManagementADm() {
                                         selectedBbank.status
                                     )}`}
                                 >
-
-                                    {selectedBbank.status ||
-                                        "Pending"}
-
+                                    {selectedBbank.status || "Pending"}
                                 </span>
 
                             </div>
 
+                            {/* Modal Actions */}
                             <div className="flex flex-wrap gap-3 mt-6">
 
-
-                                {selectedBbank.status ===
-                                    "Pending" && (
-
+                                {selectedBbank.status?.toLowerCase() === "pending" && (
+                                    <>
                                         <button
                                             onClick={() =>
                                                 updateStatus(
-                                                    selectedBbank.id,
+                                                    getBbankId(selectedBbank),
                                                     "Approved"
                                                 )
                                             }
@@ -693,16 +659,10 @@ function BBManagementADm() {
                                             Approve
                                         </button>
 
-                                    )}
-
-
-                                {selectedBbank.status ===
-                                    "Pending" && (
-
                                         <button
                                             onClick={() =>
                                                 updateStatus(
-                                                    selectedBbank.id,
+                                                    getBbankId(selectedBbank),
                                                     "Rejected"
                                                 )
                                             }
@@ -711,49 +671,43 @@ function BBManagementADm() {
                                             <FaTimes />
                                             Reject
                                         </button>
+                                    </>
+                                )}
 
-                                    )}
+                                {selectedBbank.status?.toLowerCase() === "approved" && (
+                                    <button
+                                        onClick={() =>
+                                            updateStatus(
+                                                getBbankId(selectedBbank),
+                                                "Blocked"
+                                            )
+                                        }
+                                        className="flex items-center gap-2 bg-yellow-500 text-white px-5 py-2 rounded-lg hover:bg-yellow-600"
+                                    >
+                                        <FaBan />
+                                        Block
+                                    </button>
+                                )}
 
-                                {selectedBbank.status ===
-                                    "Approved" && (
-
-                                        <button
-                                            onClick={() =>
-                                                updateStatus(
-                                                    selectedBbank.id,
-                                                    "Blocked"
-                                                )
-                                            }
-                                            className="flex items-center gap-2 bg-yellow-500 text-white px-5 py-2 rounded-lg hover:bg-yellow-600"
-                                        >
-                                            <FaBan />
-                                            Block
-                                        </button>
-
-                                    )}
-
-                                {selectedBbank.status ===
-                                    "Blocked" && (
-
-                                        <button
-                                            onClick={() =>
-                                                updateStatus(
-                                                    selectedBbank.id,
-                                                    "Approved"
-                                                )
-                                            }
-                                            className="flex items-center gap-2 bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700"
-                                        >
-                                            <FaCheck />
-                                            Unblock
-                                        </button>
-
-                                    )}
+                                {selectedBbank.status?.toLowerCase() === "blocked" && (
+                                    <button
+                                        onClick={() =>
+                                            updateStatus(
+                                                getBbankId(selectedBbank),
+                                                "Approved"
+                                            )
+                                        }
+                                        className="flex items-center gap-2 bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700"
+                                    >
+                                        <FaCheck />
+                                        Unblock
+                                    </button>
+                                )}
 
                                 <button
                                     onClick={() =>
                                         deleteBbank(
-                                            selectedBbank.id
+                                            getBbankId(selectedBbank)
                                         )
                                     }
                                     className="flex items-center gap-2 bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700"
@@ -776,19 +730,32 @@ function BBManagementADm() {
     );
 }
 
+// Statistics card
+function StatCard({ title, count, color, textColor }) {
+    return (
+        <div className={`bg-white rounded-xl shadow-md p-6 border-l-4 ${color}`}>
+            <h2 className="text-gray-500">
+                {title}
+            </h2>
 
+            <p className={`text-4xl font-bold mt-2 ${textColor}`}>
+                {count}
+            </p>
+        </div>
+    );
+}
+
+// Profile item
 function ProfileItem({ label, value }) {
     return (
         <div className="bg-gray-50 rounded-lg p-4">
-
             <p className="text-sm text-gray-500">
                 {label}
             </p>
 
-            <p className="font-semibold text-gray-800 mt-1">
+            <p className="font-semibold text-gray-800 mt-1 break-words">
                 {value || "N/A"}
             </p>
-
         </div>
     );
 }

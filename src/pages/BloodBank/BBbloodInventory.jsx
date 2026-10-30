@@ -7,7 +7,12 @@ import {
     FaEdit,
     FaTrash,
     FaSearch,
+    FaTimes,
+    FaSave,
+    FaBoxes,
     FaExclamationTriangle,
+    FaCheckCircle,
+    FaWarehouse,
 } from "react-icons/fa";
 
 import BloodBankPanel from "../../components/BBPanel";
@@ -18,33 +23,33 @@ const initialForm = {
     units: "",
 };
 
-const extractInventory = (responseData) => {
-    if (Array.isArray(responseData)) return responseData;
+const bloodGroups = [
+    "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-",
+];
 
-    if (responseData && typeof responseData === "object") {
-        if (Array.isArray(responseData.data)) return responseData.data;
-        if (Array.isArray(responseData.inventory)) return responseData.inventory;
-        if (Array.isArray(responseData.bloodInventory)) {
-            return responseData.bloodInventory;
-        }
-    }
+function extractInventory(response) {
+    const data = response?.data;
+
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.inventory)) return data.inventory;
+    if (Array.isArray(data?.bloodInventory)) return data.bloodInventory;
+    if (Array.isArray(data?.data)) return data.data;
 
     return [];
-};
+}
+
+function getErrorMessage(error) {
+    return (
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        "Something went wrong. Please try again."
+    );
+}
 
 function BBBloodInventory() {
     const user = useSelector((state) => state.user.currentUser);
 
-    const [inventory, setInventory] = useState([]);
-    const [search, setSearch] = useState("");
-    const [showModal, setShowModal] = useState(false);
-    const [editId, setEditId] = useState(null);
-    const [formData, setFormData] = useState(initialForm);
-    const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState("");
-
-    // Logged-in Blood Bank details
     const bankEmail = user?.email?.trim().toLowerCase() || "";
 
     const bankName =
@@ -52,38 +57,56 @@ function BBBloodInventory() {
         user?.bankName ||
         user?.hospitalName ||
         user?.fullName ||
-        "";
+        user?.name ||
+        "Blood Bank";
 
-    // GET: Fetch inventory for the logged-in Blood Bank
+    const [inventory, setInventory] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+
+    const [search, setSearch] = useState("");
+    const [showModal, setShowModal] = useState(false);
+    const [editingId, setEditingId] = useState(null);
+    const [form, setForm] = useState(initialForm);
+
+    const [message, setMessage] = useState("");
+    const [error, setError] = useState("");
+
+    // Get record ID
+    const getRecordId = (item) => item?._id || item?.id;
+
+    // Fetch blood inventory
     const fetchInventory = useCallback(async () => {
         if (!bankEmail) {
             setInventory([]);
+            setLoading(false);
             return;
         }
 
-        setLoading(true);
-        setError("");
-
         try {
+            setLoading(true);
+            setError("");
+
             const response = await axiosInstance.get("/bloodInventory", {
                 params: {
                     hospitalEmail: bankEmail,
                 },
             });
 
-            setInventory(extractInventory(response.data));
+            const records = extractInventory(response);
+
+            // Filter records belonging to the logged-in blood bank
+            const bankRecords = records.filter((item) => {
+                const email = item?.hospitalEmail?.trim().toLowerCase();
+
+                return email === bankEmail;
+            });
+
+            setInventory(bankRecords);
         } catch (err) {
-            console.error(
-                "Failed to fetch blood inventory:",
-                err.response?.data || err.message
-            );
-
+            console.error("Blood inventory loading error:", err);
+            setError(getErrorMessage(err));
             setInventory([]);
-
-            setError(
-                err.response?.data?.message ||
-                "Unable to load blood inventory. Please check the backend."
-            );
         } finally {
             setLoading(false);
         }
@@ -93,33 +116,70 @@ function BBBloodInventory() {
         fetchInventory();
     }, [fetchInventory]);
 
-    // Handle form input changes
-    const handleChange = (e) => {
-        const { name, value } = e.target;
+    // Statistics
+    const totalUnits = useMemo(() => {
+        return inventory.reduce(
+            (total, item) => total + Number(item.units || 0),
+            0
+        );
+    }, [inventory]);
 
-        setFormData((previous) => ({
-            ...previous,
-            [name]: value,
-        }));
-    };
+    const uniqueBloodGroups = useMemo(() => {
+        return new Set(
+            inventory.map((item) => item.bloodGroup?.toUpperCase())
+        ).size;
+    }, [inventory]);
 
-    // Open Add modal
+    const lowStock = useMemo(() => {
+        return inventory.filter(
+            (item) => Number(item.units || 0) > 0 &&
+                Number(item.units || 0) <= 10
+        ).length;
+    }, [inventory]);
+
+    const outOfStock = useMemo(() => {
+        return inventory.filter(
+            (item) => Number(item.units || 0) === 0
+        ).length;
+    }, [inventory]);
+
+    // Search
+    const filteredInventory = useMemo(() => {
+        const searchText = search.trim().toLowerCase();
+
+        if (!searchText) return inventory;
+
+        return inventory.filter((item) =>
+            [
+                item.bloodGroup,
+                item.hospitalName,
+                item.units,
+            ]
+                .join(" ")
+                .toLowerCase()
+                .includes(searchText)
+        );
+    }, [inventory, search]);
+
+    // Open add modal
     const openAddModal = () => {
-        setEditId(null);
-        setFormData(initialForm);
+        setEditingId(null);
+        setForm(initialForm);
+        setMessage("");
         setError("");
         setShowModal(true);
     };
 
-    // Open Edit modal
+    // Open edit modal
     const openEditModal = (item) => {
-        setEditId(item._id || item.id);
+        setEditingId(getRecordId(item));
 
-        setFormData({
-            bloodGroup: item.bloodGroup || item.group || "",
+        setForm({
+            bloodGroup: item.bloodGroup || "",
             units: String(item.units ?? ""),
         });
 
+        setMessage("");
         setError("");
         setShowModal(true);
     };
@@ -129,481 +189,504 @@ function BBBloodInventory() {
         if (saving) return;
 
         setShowModal(false);
-        setEditId(null);
-        setFormData(initialForm);
+        setEditingId(null);
+        setForm(initialForm);
         setError("");
     };
 
-    // POST: Add or PATCH: Update inventory
+    // Form input changes
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+
+        setForm((previous) => ({
+            ...previous,
+            [name]: value,
+        }));
+    };
+
+    // Save inventory
     const handleSubmit = async (e) => {
         e.preventDefault();
 
+        setError("");
+        setMessage("");
+
         if (!bankEmail) {
-            setError("Blood Bank email is missing. Please log in again.");
+            setError("Blood bank email is not available. Please log in again.");
             return;
         }
 
-        const units = Number(formData.units);
+        const bloodGroup = form.bloodGroup.toUpperCase();
+        const units = Number(form.units);
+
+        if (!bloodGroups.includes(bloodGroup)) {
+            setError("Please select a valid blood group.");
+            return;
+        }
 
         if (
-            !formData.bloodGroup ||
-            formData.units === "" ||
+            form.units === "" ||
             !Number.isInteger(units) ||
-            units < 0
+            units <= 0
         ) {
-            setError(
-                "Select a blood group and enter a valid non-negative whole number of units."
-            );
+            setError("Please enter a valid number of units greater than zero.");
             return;
         }
 
-        // These field names match the existing BloodInventory model.
-        const bloodData = {
+        const payload = {
             hospitalEmail: bankEmail,
             hospitalName: bankName,
-            bloodGroup: formData.bloodGroup,
+            bloodGroup,
             units,
             date: new Date().toISOString().split("T")[0],
         };
 
-        setSaving(true);
-        setError("");
-
         try {
-            if (editId) {
+            setSaving(true);
+
+            if (editingId) {
+                // EDIT: Set the exact quantity entered.
                 await axiosInstance.patch(
-                    `/bloodInventory/${editId}`,
-                    bloodData
+                    `/bloodInventory/${editingId}`,
+                    payload
                 );
 
-                alert("Blood stock updated successfully.");
+                setMessage("Blood inventory updated successfully.");
             } else {
-                await axiosInstance.post("/bloodInventory", bloodData);
+                // ADD: Check whether this blood group already exists.
+                const existingRecord = inventory.find(
+                    (item) =>
+                        item.bloodGroup?.toUpperCase() === bloodGroup
+                );
 
-                alert("Blood stock added successfully.");
+                if (existingRecord) {
+                    // OPTION A: Add new units to existing stock.
+                    const existingUnits = Number(existingRecord.units || 0);
+                    const updatedUnits = existingUnits + units;
+
+                    await axiosInstance.patch(
+                        `/bloodInventory/${getRecordId(existingRecord)}`,
+                        {
+                            ...payload,
+                            units: updatedUnits,
+                        }
+                    );
+
+                    setMessage(
+                        `${bloodGroup} stock updated. Previous stock: ${existingUnits}, added: ${units}, new stock: ${updatedUnits}.`
+                    );
+                } else {
+                    // No existing blood group: create a new record.
+                    await axiosInstance.post("/bloodInventory", payload);
+
+                    setMessage(
+                        `${bloodGroup} inventory added successfully.`
+                    );
+                }
             }
 
             setShowModal(false);
-            setEditId(null);
-            setFormData(initialForm);
+            setEditingId(null);
+            setForm(initialForm);
 
             await fetchInventory();
         } catch (err) {
-            console.error(
-                "Failed to save blood inventory:",
-                err.response?.data || err.message
-            );
-
-            setError(
-                err.response?.data?.message ||
-                "Unable to save blood stock. Please check the backend API."
-            );
+            console.error("Saving blood inventory error:", err);
+            setError(getErrorMessage(err));
         } finally {
             setSaving(false);
         }
     };
 
-    // DELETE: Remove inventory record
-    const deleteBlood = async (item) => {
-        const id = item._id || item.id;
+    // Delete inventory
+    const handleDelete = async (item) => {
+        const id = getRecordId(item);
 
         if (!id) {
-            alert("This inventory record has no valid ID.");
+            alert("Inventory record ID is missing.");
             return;
         }
 
-        if (!window.confirm(`Delete ${item.bloodGroup} blood stock?`)) {
-            return;
-        }
+        const confirmed = window.confirm(
+            `Are you sure you want to delete ${item.bloodGroup} inventory?`
+        );
+
+        if (!confirmed) return;
 
         try {
+            setError("");
+            setMessage("");
+
             await axiosInstance.delete(`/bloodInventory/${id}`);
 
-            alert("Blood stock deleted successfully.");
+            setMessage(`${item.bloodGroup} inventory deleted successfully.`);
 
             await fetchInventory();
         } catch (err) {
-            console.error(
-                "Failed to delete blood inventory:",
-                err.response?.data || err.message
-            );
-
-            alert(
-                err.response?.data?.message ||
-                "Unable to delete blood stock."
-            );
+            console.error("Delete inventory error:", err);
+            setError(getErrorMessage(err));
         }
     };
 
-    // Search inventory by blood group
-    const filteredInventory = useMemo(() => {
-        const term = search.trim().toLowerCase();
+    const getStockStatus = (units) => {
+        const quantity = Number(units || 0);
 
-        return inventory.filter((item) =>
-            String(item.bloodGroup || item.group || "")
-                .toLowerCase()
-                .includes(term)
-        );
-    }, [inventory, search]);
+        if (quantity === 0) {
+            return {
+                label: "Out of Stock",
+                className: "bg-red-100 text-red-700",
+            };
+        }
 
-    // Summary values
-    const totalUnits = inventory.reduce(
-        (sum, item) => sum + (Number(item.units) || 0),
-        0
-    );
+        if (quantity <= 10) {
+            return {
+                label: "Low Stock",
+                className: "bg-yellow-100 text-yellow-700",
+            };
+        }
 
-    const bloodGroups = new Set(
-        inventory.map((item) => item.bloodGroup || item.group)
-    ).size;
-
-    const lowStock = inventory.filter(
-        (item) => Number(item.units) <= 10
-    ).length;
-
-    const available = inventory.filter(
-        (item) => Number(item.units) > 10
-    ).length;
-
-    if (!user) {
-        return (
-            <div className="mt-20 text-center text-2xl">
-                Please log in first.
-            </div>
-        );
-    }
+        return {
+            label: "Available",
+            className: "bg-green-100 text-green-700",
+        };
+    };
 
     return (
-        <div className="flex min-h-screen bg-gray-100">
+        <div className="min-h-screen bg-gray-100 flex">
             <BloodBankPanel />
 
-            <main className="min-w-0 flex-1 p-4 md:p-8">
+            <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8">
                 {/* Header */}
-                <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-7">
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-800">
-                            Blood Bank Inventory
+                        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">
+                            Blood Inventory
                         </h1>
 
-                        <p className="mt-2 text-gray-500">
-                            Manage blood units available in your blood bank.
+                        <p className="text-gray-500 mt-1">
+                            Manage your blood bank stock and availability.
+                        </p>
+
+                        <p className="text-sm text-gray-500 mt-1">
+                            {bankName}
                         </p>
                     </div>
 
                     <button
                         onClick={openAddModal}
-                        className="flex items-center gap-2 rounded-lg bg-red-600 px-5 py-3 text-white shadow-lg hover:bg-red-700"
+                        className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-lg font-semibold shadow transition"
                     >
                         <FaPlus />
-                        Add Blood Unit
+                        Add Blood Stock
                     </button>
                 </div>
 
-                {/* Error message */}
-                {error && !showModal && (
-                    <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-                        {error}
-
+                {/* Messages */}
+                {message && (
+                    <div className="mb-5 p-3 rounded-lg bg-green-100 text-green-700 flex items-center gap-2">
+                        <FaCheckCircle />
+                        <span>{message}</span>
                         <button
-                            onClick={fetchInventory}
-                            className="ml-3 font-semibold underline"
+                            onClick={() => setMessage("")}
+                            className="ml-auto"
                         >
-                            Retry
+                            <FaTimes />
                         </button>
                     </div>
                 )}
 
-                {/* Summary cards */}
-                <div className="mb-8 grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-                    <SummaryCard
-                        icon={<FaTint />}
-                        color="text-red-600"
-                        value={totalUnits}
-                        label="Total Units"
-                    />
+                {error && !showModal && (
+                    <div className="mb-5 p-3 rounded-lg bg-red-100 text-red-700">
+                        {error}
+                    </div>
+                )}
 
-                    <SummaryCard
-                        icon={<FaTint />}
-                        color="text-blue-600"
-                        value={bloodGroups}
-                        label="Blood Groups"
-                    />
+                {/* Statistics */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-7">
+                    <div className="bg-white rounded-xl shadow-sm p-5 border-l-4 border-red-500">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-gray-500 text-sm">
+                                    Total Blood Units
+                                </p>
+                                <h2 className="text-3xl font-bold text-gray-800 mt-2">
+                                    {totalUnits}
+                                </h2>
+                            </div>
 
-                    <SummaryCard
-                        icon={<FaExclamationTriangle />}
-                        color="text-yellow-600"
-                        value={lowStock}
-                        label="Low Stock"
-                    />
+                            <FaTint className="text-red-500 text-3xl" />
+                        </div>
+                    </div>
 
-                    <SummaryCard
-                        icon={<FaTint />}
-                        color="text-green-600"
-                        value={available}
-                        label="Available"
-                    />
-                </div>
+                    <div className="bg-white rounded-xl shadow-sm p-5 border-l-4 border-blue-500">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-gray-500 text-sm">
+                                    Blood Groups
+                                </p>
+                                <h2 className="text-3xl font-bold text-gray-800 mt-2">
+                                    {uniqueBloodGroups}
+                                </h2>
+                            </div>
 
-                {/* Search */}
-                <div className="mb-8 flex items-center gap-3 rounded-xl bg-white p-4 shadow-lg">
-                    <FaSearch className="text-gray-500" />
+                            <FaWarehouse className="text-blue-500 text-3xl" />
+                        </div>
+                    </div>
 
-                    <input
-                        type="text"
-                        placeholder="Search blood group..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="w-full outline-none"
-                    />
+                    <div className="bg-white rounded-xl shadow-sm p-5 border-l-4 border-yellow-500">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-gray-500 text-sm">
+                                    Low Stock Records
+                                </p>
+                                <h2 className="text-3xl font-bold text-gray-800 mt-2">
+                                    {lowStock}
+                                </h2>
+                            </div>
+
+                            <FaExclamationTriangle className="text-yellow-500 text-3xl" />
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-sm p-5 border-l-4 border-gray-500">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-gray-500 text-sm">
+                                    Out of Stock
+                                </p>
+                                <h2 className="text-3xl font-bold text-gray-800 mt-2">
+                                    {outOfStock}
+                                </h2>
+                            </div>
+
+                            <FaBoxes className="text-gray-500 text-3xl" />
+                        </div>
+                    </div>
                 </div>
 
                 {/* Inventory list */}
-                {loading ? (
-                    <div className="rounded-xl bg-white p-10 text-center text-gray-500 shadow-lg">
-                        Loading blood inventory...
-                    </div>
-                ) : filteredInventory.length === 0 ? (
-                    <div className="rounded-xl bg-white p-10 text-center text-gray-500 shadow-lg">
-                        {search
-                            ? "No matching blood groups found."
-                            : "No blood inventory found. Add your first blood stock record."}
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                        {filteredInventory.map((item) => {
-                            const units = Number(item.units) || 0;
-                            const id = item._id || item.id;
-                            const group =
-                                item.bloodGroup || item.group || "Unknown";
-                            const isLow = units <= 10;
-
-                            // Model uses "date", not "lastUpdated".
-                            const displayDate = item.date || item.createdAt;
-
-                            return (
-                                <article
-                                    key={id || group}
-                                    className="rounded-xl bg-white p-6 shadow-lg transition hover:shadow-xl"
-                                >
-                                    <div className="mb-5 flex items-center justify-between gap-3">
-                                        <div className="flex items-center gap-3">
-                                            <div className="rounded-full bg-red-100 p-3">
-                                                <FaTint className="text-2xl text-red-600" />
-                                            </div>
-
-                                            <div>
-                                                <h2 className="text-2xl font-bold text-red-600">
-                                                    {group}
-                                                </h2>
-
-                                                <p className="text-gray-500">
-                                                    Blood Group
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <span
-                                            className={`rounded-full px-4 py-2 text-sm font-semibold ${isLow
-                                                    ? "bg-red-100 text-red-600"
-                                                    : "bg-green-100 text-green-600"
-                                                }`}
-                                        >
-                                            {isLow ? "Low Stock" : "Available"}
-                                        </span>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-5">
-                                        <div>
-                                            <p className="text-sm text-gray-500">
-                                                Available Units
-                                            </p>
-
-                                            <h3 className="text-3xl font-bold">
-                                                {units}
-                                            </h3>
-                                        </div>
-
-                                        <div>
-                                            <p className="text-sm text-gray-500">
-                                                Last Updated
-                                            </p>
-
-                                            <h3 className="font-semibold">
-                                                {displayDate
-                                                    ? String(displayDate).slice(
-                                                        0,
-                                                        10
-                                                    )
-                                                    : "Not recorded"}
-                                            </h3>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-6 flex justify-end gap-3">
-                                        <button
-                                            onClick={() =>
-                                                openEditModal(item)
-                                            }
-                                            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-                                        >
-                                            <FaEdit />
-                                            Edit
-                                        </button>
-
-                                        <button
-                                            onClick={() => deleteBlood(item)}
-                                            className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700"
-                                        >
-                                            <FaTrash />
-                                            Delete
-                                        </button>
-                                    </div>
-                                </article>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {/* Add / Edit modal */}
-                {showModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
-                        <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-                            <h2 className="mb-6 text-2xl font-bold text-gray-800">
-                                {editId
-                                    ? "Edit Blood Unit"
-                                    : "Add Blood Unit"}
-                            </h2>
-
-                            {error && (
-                                <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
-                                    {error}
-                                </p>
-                            )}
-
-                            <form
-                                onSubmit={handleSubmit}
-                                className="space-y-5"
-                            >
-                                <div>
-                                    <label className="mb-2 block font-semibold">
-                                        Blood Group
-                                    </label>
-
-                                    <select
-                                        name="bloodGroup"
-                                        value={formData.bloodGroup}
-                                        onChange={handleChange}
-                                        className="w-full rounded-lg border p-3 outline-none focus:ring-2 focus:ring-red-500"
-                                        required
-                                    >
-                                        <option value="">
-                                            Select Blood Group
-                                        </option>
-
-                                        {[
-                                            "A+",
-                                            "A-",
-                                            "B+",
-                                            "B-",
-                                            "AB+",
-                                            "AB-",
-                                            "O+",
-                                            "O-",
-                                        ].map((group) => (
-                                            <option
-                                                key={group}
-                                                value={group}
-                                            >
-                                                {group}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="mb-2 block font-semibold">
-                                        Available Units
-                                    </label>
-
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="1"
-                                        name="units"
-                                        value={formData.units}
-                                        onChange={handleChange}
-                                        placeholder="Enter blood units"
-                                        className="w-full rounded-lg border p-3 outline-none focus:ring-2 focus:ring-red-500"
-                                        required
-                                    />
-                                </div>
-
-                                <p className="text-sm text-gray-500">
-                                    The inventory date will be saved
-                                    automatically when you save this record.
-                                </p>
-
-                                <div className="flex justify-end gap-3 pt-3">
-                                    <button
-                                        type="button"
-                                        onClick={closeModal}
-                                        disabled={saving}
-                                        className="rounded-lg bg-gray-400 px-5 py-2 text-white hover:bg-gray-500 disabled:opacity-50"
-                                    >
-                                        Cancel
-                                    </button>
-
-                                    <button
-                                        type="submit"
-                                        disabled={saving}
-                                        className="rounded-lg bg-red-600 px-5 py-2 text-white hover:bg-red-700 disabled:opacity-50"
-                                    >
-                                        {saving
-                                            ? "Saving..."
-                                            : editId
-                                                ? "Update Blood Unit"
-                                                : "Save Blood Unit"}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )}
-
-                {/* Low stock alert */}
-                {lowStock > 0 && (
-                    <div className="mt-8 flex items-start gap-4 rounded-xl border-l-4 border-yellow-500 bg-yellow-100 p-5">
-                        <FaExclamationTriangle className="mt-1 text-3xl text-yellow-600" />
-
+                <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                         <div>
-                            <h3 className="text-lg font-bold text-yellow-700">
-                                Low Stock Alert
-                            </h3>
-
-                            <p className="mt-1 text-gray-700">
-                                {lowStock} blood stock record(s) have 10 or
-                                fewer units. Arrange blood collection or
-                                donation campaigns to replenish stock.
+                            <h2 className="text-xl font-bold text-gray-800">
+                                Available Blood Stock
+                            </h2>
+                            <p className="text-sm text-gray-500 mt-1">
+                                View and manage your inventory records.
                             </p>
                         </div>
+
+                        <div className="relative w-full sm:w-72">
+                            <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+
+                            <input
+                                type="text"
+                                placeholder="Search blood group..."
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg py-2.5 pl-10 pr-4 outline-none focus:ring-2 focus:ring-red-400"
+                            />
+                        </div>
                     </div>
-                )}
+
+                    {loading ? (
+                        <div className="text-center py-12 text-gray-500">
+                            Loading blood inventory...
+                        </div>
+                    ) : filteredInventory.length === 0 ? (
+                        <div className="text-center py-12">
+                            <FaTint className="mx-auto text-5xl text-gray-300 mb-4" />
+
+                            <h3 className="text-lg font-semibold text-gray-700">
+                                No blood inventory found
+                            </h3>
+
+                            <p className="text-gray-500 mt-1">
+                                Add blood stock to display your inventory here.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                            {filteredInventory.map((item) => {
+                                const status = getStockStatus(item.units);
+
+                                return (
+                                    <div
+                                        key={getRecordId(item)}
+                                        className="border border-gray-200 rounded-xl p-5 hover:shadow-md transition"
+                                    >
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
+                                                <FaTint className="text-red-600 text-2xl" />
+                                            </div>
+
+                                            <span
+                                                className={`text-xs font-semibold px-3 py-1 rounded-full ${status.className}`}
+                                            >
+                                                {status.label}
+                                            </span>
+                                        </div>
+
+                                        <h3 className="text-2xl font-bold text-gray-800">
+                                            {item.bloodGroup}
+                                        </h3>
+
+                                        <p className="text-gray-500 text-sm mt-2">
+                                            Available Units
+                                        </p>
+
+                                        <p className="text-3xl font-bold text-red-600 mt-1">
+                                            {Number(item.units || 0)}
+                                        </p>
+
+                                        <div className="border-t mt-4 pt-4 flex items-center justify-between">
+                                            <span className="text-xs text-gray-500">
+                                                {item.date
+                                                    ? new Date(item.date).toLocaleDateString()
+                                                    : "Date not available"}
+                                            </span>
+
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => openEditModal(item)}
+                                                    title="Edit inventory"
+                                                    className="p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200"
+                                                >
+                                                    <FaEdit />
+                                                </button>
+
+                                                <button
+                                                    onClick={() => handleDelete(item)}
+                                                    title="Delete inventory"
+                                                    className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-200"
+                                                >
+                                                    <FaTrash />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
             </main>
-        </div>
-    );
-}
 
-function SummaryCard({ icon, color, value, label }) {
-    return (
-        <div className="rounded-xl bg-white p-6 text-center shadow-lg">
-            <div
-                className={`mx-auto mb-3 flex justify-center text-4xl ${color}`}
-            >
-                {icon}
-            </div>
+            {/* Add / Edit Modal */}
+            {showModal && (
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-md rounded-xl shadow-xl p-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-xl font-bold text-gray-800">
+                                {editingId
+                                    ? "Edit Blood Inventory"
+                                    : "Add Blood Stock"}
+                            </h2>
 
-            <h2 className={`text-3xl font-bold ${color}`}>{value}</h2>
+                            <button
+                                onClick={closeModal}
+                                disabled={saving}
+                                className="text-gray-500 hover:text-red-600 text-xl"
+                            >
+                                <FaTimes />
+                            </button>
+                        </div>
 
-            <p className="mt-1 text-gray-500">{label}</p>
+                        {error && (
+                            <div className="mb-4 p-3 rounded-lg bg-red-100 text-red-700 text-sm">
+                                {error}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit}>
+                            <div className="mb-5">
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                    Blood Group
+                                </label>
+
+                                <select
+                                    name="bloodGroup"
+                                    value={form.bloodGroup}
+                                    onChange={handleChange}
+                                    required
+                                    disabled={!!editingId || saving}
+                                    className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-red-400 disabled:bg-gray-100"
+                                >
+                                    <option value="">
+                                        Select blood group
+                                    </option>
+
+                                    {bloodGroups.map((group) => (
+                                        <option key={group} value={group}>
+                                            {group}
+                                        </option>
+                                    ))}
+                                </select>
+
+                                {!editingId && (
+                                    <p className="text-xs text-gray-500 mt-2">
+                                        If this blood group already exists, the
+                                        entered units will be added to its stock.
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="mb-6">
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                    {editingId
+                                        ? "Available Units"
+                                        : "Units to Add"}
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="units"
+                                    min="1"
+                                    step="1"
+                                    value={form.units}
+                                    onChange={handleChange}
+                                    placeholder="Enter number of units"
+                                    required
+                                    disabled={saving}
+                                    className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-red-400"
+                                />
+
+                                {editingId && (
+                                    <p className="text-xs text-gray-500 mt-2">
+                                        Enter the new total stock quantity.
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={closeModal}
+                                    disabled={saving}
+                                    className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+
+                                <button
+                                    type="submit"
+                                    disabled={saving}
+                                    className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                                >
+                                    {saving ? (
+                                        "Saving..."
+                                    ) : (
+                                        <>
+                                            <FaSave />
+                                            {editingId ? "Update" : "Add Stock"}
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

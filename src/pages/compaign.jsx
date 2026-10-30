@@ -1,603 +1,649 @@
-import { useEffect, useState } from "react";
-import axios from "axios";
 
+import { useEffect, useMemo, useState, useCallback } from "react";
 import Navbar from "../components/Navbar";
 
 import {
+    FaTint,
     FaCalendarAlt,
     FaMapMarkerAlt,
+    FaClock,
     FaUsers,
-    FaTint,
-    FaHeart,
+    FaSearch,
+    FaHospital,
+    FaArrowRight,
+    FaHeartbeat,
+    FaExclamationCircle,
     FaSyncAlt,
 } from "react-icons/fa";
 
-const API_URL =
-    "https://blood-donation-backend-olwl.onrender.com/api/campaigns";
+import { useNavigate } from "react-router-dom";
+import axiosInstance from "../API/axiosInstance";
 
 function Campaigns() {
-    const [campaigns, setCampaigns] = useState([]);
+    const navigate = useNavigate();
+
+    const [events, setEvents] = useState([]);
+    const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
-    // =========================================
-    // FETCH CAMPAIGNS
-    // =========================================
-
-    useEffect(() => {
-        fetchCampaigns();
-    }, []);
-
-    const fetchCampaigns = async () => {
+    // Fetch donation camps from MongoDB BDS
+    const fetchEvents = useCallback(async () => {
         try {
             setLoading(true);
             setError("");
 
-            const response = await axios.get(API_URL);
+            const response = await axiosInstance.get("/donationCamps");
 
-            setCampaigns(response.data);
-        } catch (error) {
+            console.log("Donation Camps API Response:", response.data);
+
+            // Your backend controller returns { count, camps }
+            let eventList = [];
+
+            if (Array.isArray(response.data)) {
+                eventList = response.data;
+            } else if (Array.isArray(response.data?.camps)) {
+                eventList = response.data.camps;
+            } else if (Array.isArray(response.data?.donationEvents)) {
+                eventList = response.data.donationEvents;
+            } else if (Array.isArray(response.data?.events)) {
+                eventList = response.data.events;
+            } else if (Array.isArray(response.data?.data)) {
+                eventList = response.data.data;
+            }
+
+            console.log("Donation Camps Loaded:", eventList);
+
+            setEvents(eventList);
+
+        } catch (err) {
             console.error(
-                "Error fetching campaigns:",
-                error
+                "Error fetching donation camps:",
+                err.response?.data || err.message
             );
 
+            setEvents([]);
+
             setError(
-                "Unable to load campaigns. Please try again."
+                err.response?.data?.message ||
+                "Unable to load donation campaigns."
             );
         } finally {
             setLoading(false);
         }
+    }, []);
+
+    useEffect(() => {
+        fetchEvents();
+    }, [fetchEvents]);
+
+    // Check upcoming camps
+    const isUpcoming = (event) => {
+        const status = String(event.status || "Upcoming")
+            .trim()
+            .toLowerCase();
+
+        if (
+            ["cancelled", "canceled", "completed", "rejected"].includes(status)
+        ) {
+            return false;
+        }
+
+        if (!event.date) {
+            return true;
+        }
+
+        const eventDate = new Date(event.date);
+
+        if (Number.isNaN(eventDate.getTime())) {
+            return true;
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        eventDate.setHours(0, 0, 0, 0);
+
+        return eventDate >= today;
     };
 
-    // =========================================
-    // STATISTICS
-    // =========================================
+    // Search and filter
+    const upcomingEvents = useMemo(() => {
+        const searchText = search.trim().toLowerCase();
 
-    const upcomingCampaigns = campaigns.filter(
-        (campaign) =>
-            campaign.status === "Upcoming"
+        return events
+            .filter(isUpcoming)
+            .filter((event) => {
+                const searchableFields = [
+                    event.campName,
+                    event.title,
+                    event.venue,
+                    event.location,
+                    event.address,
+                    event.district,
+                    event.hospitalName,
+                ];
+
+                return searchableFields.some((field) =>
+                    String(field || "").toLowerCase().includes(searchText)
+                );
+            })
+            .sort((a, b) => {
+                return new Date(a.date || 0) - new Date(b.date || 0);
+            });
+    }, [events, search]);
+
+    // Statistics
+    const totalEvents = upcomingEvents.length;
+
+    const totalRegisteredDonors = upcomingEvents.reduce(
+        (total, event) =>
+            total + Number(event.registeredDonors || 0),
+        0
     );
 
-    const totalRegisteredDonors =
-        campaigns.reduce(
-            (sum, campaign) =>
-                sum +
-                Number(
-                    campaign.registeredDonors || 0
-                ),
-            0
-        );
+    const totalTargetDonors = upcomingEvents.reduce(
+        (total, event) =>
+            total + Number(
+                event.capacity ||
+                event.targetDonors ||
+                event.target ||
+                0
+            ),
+        0
+    );
+
+    // Date format
+    const formatDate = (date) => {
+        if (!date) return "Date not available";
+
+        const parsedDate = new Date(date);
+
+        if (Number.isNaN(parsedDate.getTime())) {
+            return "Date not available";
+        }
+
+        return parsedDate.toLocaleDateString("en-IN", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+        });
+    };
+
+    // Time format
+    const getTime = (event) => {
+        if (event.startTime && event.endTime) {
+            return `${event.startTime} - ${event.endTime}`;
+        }
+
+        return event.startTime || event.time || "Time not available";
+    };
+
+    // Blood groups
+    const getBloodGroups = (event) => {
+        if (Array.isArray(event.bloodGroupsNeeded)) {
+            return event.bloodGroupsNeeded;
+        }
+
+        if (Array.isArray(event.bloodGroups)) {
+            return event.bloodGroups;
+        }
+
+        return [];
+    };
+
+    // Join campaign
+    const handleJoinCampaign = (event) => {
+        navigate("/login", {
+            state: {
+                donationCampId: event._id,
+                donationCamp: event,
+                from: "campaign",
+            },
+        });
+    };
 
     return (
-        <>
+        <div className="min-h-screen bg-gray-50">
+
             <Navbar />
 
-            <div className="min-h-screen bg-gray-100">
+            {/* Hero Section */}
+            <section className="relative overflow-hidden bg-gradient-to-r from-red-700 to-red-500 text-white py-16 px-4">
+                <div className="max-w-7xl mx-auto text-center">
 
-                {/* =====================================
-                    HERO
-                ===================================== */}
+                    <div className="inline-flex items-center gap-2 bg-white/20 px-4 py-2 rounded-full text-sm mb-5">
+                        <FaHeartbeat />
+                        Every Donation Saves Lives
+                    </div>
 
-                <div className="bg-gradient-to-r from-red-800 to-red-400 text-white py-20">
+                    <h1 className="text-3xl md:text-5xl font-bold mb-5">
+                        Blood Donation Campaigns
+                    </h1>
 
-                    <div className="max-w-7xl mx-auto px-6 text-center">
+                    <p className="max-w-2xl mx-auto text-red-50 text-base md:text-lg leading-relaxed">
+                        Be a part of our life-saving mission.
+                        Join upcoming blood donation events and
+                        help someone get a second chance at life.
+                    </p>
 
-                        <FaTint className="text-6xl mx-auto mb-5" />
+                    <button
+                        onClick={() =>
+                            document
+                                .getElementById("campaign-list")
+                                ?.scrollIntoView({ behavior: "smooth" })
+                        }
+                        className="mt-8 bg-white text-red-600 px-7 py-3 rounded-full font-semibold hover:bg-red-50 transition"
+                    >
+                        Explore Campaigns
+                        <FaArrowRight className="inline ml-2" />
+                    </button>
 
-                        <h1 className="text-5xl font-bold mb-4">
-                            Blood Donation Campaigns
-                        </h1>
+                </div>
+            </section>
 
-                        <p className="max-w-3xl mx-auto text-lg">
-                            Participate in blood donation
-                            campaigns and become someone's
-                            hero. Together we can build a
-                            healthier community by ensuring
-                            blood is available whenever it
-                            is needed.
+            {/* Statistics */}
+            <section className="max-w-7xl mx-auto px-4 -mt-8 relative z-10">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+
+                    <div className="bg-white rounded-xl shadow-md p-6 text-center">
+                        <FaCalendarAlt className="text-red-500 text-3xl mx-auto mb-3" />
+                        <h2 className="text-3xl font-bold text-gray-800">
+                            {loading ? "..." : totalEvents}
+                        </h2>
+                        <p className="text-gray-500 mt-1">
+                            Upcoming Campaigns
                         </p>
+                    </div>
 
-                        <button
-                            onClick={() =>
-                                document
-                                    .getElementById(
-                                        "campaigns"
-                                    )
-                                    ?.scrollIntoView({
-                                        behavior: "smooth",
-                                    })
-                            }
-                            className="mt-8 bg-white text-red-600 px-8 py-3 rounded-xl font-semibold hover:bg-gray-100 transition"
-                        >
-                            Join a Campaign
-                        </button>
+                    <div className="bg-white rounded-xl shadow-md p-6 text-center">
+                        <FaUsers className="text-red-500 text-3xl mx-auto mb-3" />
+                        <h2 className="text-3xl font-bold text-gray-800">
+                            {loading ? "..." : totalRegisteredDonors}
+                        </h2>
+                        <p className="text-gray-500 mt-1">
+                            Registered Donors
+                        </p>
+                    </div>
 
+                    <div className="bg-white rounded-xl shadow-md p-6 text-center">
+                        <FaTint className="text-red-500 text-3xl mx-auto mb-3" />
+                        <h2 className="text-3xl font-bold text-gray-800">
+                            {loading ? "..." : totalTargetDonors}
+                        </h2>
+                        <p className="text-gray-500 mt-1">
+                            Total Camp Capacity
+                        </p>
                     </div>
 
                 </div>
+            </section>
 
-                {/* =====================================
-                    STATISTICS
-                ===================================== */}
+            {/* Campaign List */}
+            <section
+                id="campaign-list"
+                className="max-w-7xl mx-auto px-4 py-16"
+            >
 
-                <div className="max-w-7xl mx-auto px-6 py-14">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5 mb-8">
 
-                    <div className="grid lg:grid-cols-4 md:grid-cols-2 gap-6">
-
-                        {/* Active Campaigns */}
-
-                        <div className="bg-white rounded-xl shadow-lg p-6 text-center">
-
-                            <h2 className="text-4xl font-bold text-red-600">
-                                {
-                                    upcomingCampaigns.length
-                                }
-                            </h2>
-
-                            <p className="text-gray-600 mt-2">
-                                Active Campaigns
-                            </p>
-
-                        </div>
-
-                        {/* Registered Donors */}
-
-                        <div className="bg-white rounded-xl shadow-lg p-6 text-center">
-
-                            <h2 className="text-4xl font-bold text-red-600">
-                                {totalRegisteredDonors}
-                            </h2>
-
-                            <p className="text-gray-600 mt-2">
-                                Registered Donors
-                            </p>
-
-                        </div>
-
-                        {/* Partner Hospitals */}
-
-                        <div className="bg-white rounded-xl shadow-lg p-6 text-center">
-
-                            <h2 className="text-4xl font-bold text-red-600">
-                                120+
-                            </h2>
-
-                            <p className="text-gray-600 mt-2">
-                                Partner Hospitals
-                            </p>
-
-                        </div>
-
-                        {/* Lives Saved */}
-
-                        <div className="bg-white rounded-xl shadow-lg p-6 text-center">
-
-                            <h2 className="text-4xl font-bold text-red-600">
-                                6500+
-                            </h2>
-
-                            <p className="text-gray-600 mt-2">
-                                Lives Saved
-                            </p>
-
-                        </div>
-
-                    </div>
-
-                    {/* =================================
-                        CAMPAIGNS
-                    ================================= */}
-
-                    <div
-                        id="campaigns"
-                        className="mt-16"
-                    >
-
-                        <h2 className="text-3xl font-bold text-center text-red-600 mb-10">
-                            Upcoming Campaigns
+                    <div>
+                        <h2 className="text-2xl md:text-3xl font-bold text-gray-800">
+                            Upcoming Donation Camps
                         </h2>
 
-                        {/* Loading */}
+                        <p className="text-gray-500 mt-2">
+                            Find a campaign near you and become a life saver.
+                        </p>
+                    </div>
 
-                        {loading && (
-                            <div className="bg-white rounded-xl shadow p-10 text-center">
+                    <button
+                        onClick={fetchEvents}
+                        disabled={loading}
+                        className="flex items-center justify-center gap-2 border border-red-500 text-red-600 px-5 py-2.5 rounded-lg hover:bg-red-50 disabled:opacity-50"
+                    >
+                        <FaSyncAlt className={loading ? "animate-spin" : ""} />
+                        Refresh
+                    </button>
 
-                                <FaSyncAlt className="animate-spin text-red-600 text-3xl mx-auto" />
+                </div>
 
-                                <p className="text-gray-500 mt-3">
-                                    Loading campaigns...
-                                </p>
+                {/* Search */}
+                <div className="relative mb-8 max-w-xl">
+                    <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
 
-                            </div>
-                        )}
+                    <input
+                        type="text"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Search by camp name, venue or district..."
+                        className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400 bg-white"
+                    />
+                </div>
 
-                        {/* Error */}
+                {/* Loading */}
+                {loading && (
+                    <div className="text-center py-16">
 
-                        {!loading && error && (
-                            <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+                        <div className="w-12 h-12 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
 
-                                <p className="text-red-600">
-                                    {error}
-                                </p>
+                        <p className="text-gray-500">
+                            Loading donation camps...
+                        </p>
 
-                                <button
-                                    onClick={fetchCampaigns}
-                                    className="mt-4 bg-red-600 text-white px-5 py-2 rounded-lg"
+                    </div>
+                )}
+
+                {/* Error */}
+                {!loading && error && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+
+                        <FaExclamationCircle className="text-red-500 text-3xl mx-auto mb-3" />
+
+                        <p className="text-red-700 mb-4">
+                            {error}
+                        </p>
+
+                        <button
+                            onClick={fetchEvents}
+                            className="bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700"
+                        >
+                            Try Again
+                        </button>
+
+                    </div>
+                )}
+
+                {/* Empty State */}
+                {!loading && !error && upcomingEvents.length === 0 && (
+                    <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+
+                        <FaCalendarAlt className="text-gray-300 text-5xl mx-auto mb-4" />
+
+                        <h3 className="text-xl font-semibold text-gray-700">
+                            No Upcoming Donation Camps Found
+                        </h3>
+
+                        <p className="text-gray-500 mt-2">
+                            {search
+                                ? "Try searching with a different keyword."
+                                : events.length === 0
+                                    ? "No donation camps are currently available."
+                                    : "There are no upcoming camps. Please check again later."}
+                        </p>
+
+                    </div>
+                )}
+
+                {/* Campaign Cards */}
+                {!loading && !error && upcomingEvents.length > 0 && (
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-7">
+
+                        {upcomingEvents.map((event) => {
+
+                            const registered = Number(
+                                event.registeredDonors || 0
+                            );
+
+                            const target = Number(
+                                event.capacity ||
+                                event.targetDonors ||
+                                event.target ||
+                                0
+                            );
+
+                            const progress = target > 0
+                                ? Math.min((registered / target) * 100, 100)
+                                : 0;
+
+                            const bloodGroups = getBloodGroups(event);
+
+                            return (
+
+                                <div
+                                    key={event._id}
+                                    className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition"
                                 >
-                                    Try Again
-                                </button>
 
-                            </div>
-                        )}
+                                    {/* Card Header */}
+                                    <div className="bg-gradient-to-r from-red-600 to-red-500 p-5 text-white">
 
-                        {/* No campaigns */}
+                                        <div className="flex justify-between items-start gap-3">
 
-                        {!loading &&
-                            !error &&
-                            upcomingCampaigns.length ===
-                            0 && (
-                                <div className="bg-white rounded-xl shadow p-10 text-center">
+                                            <div>
 
-                                    <FaTint className="text-gray-300 text-5xl mx-auto" />
+                                                <span className="text-xs bg-white/20 px-3 py-1 rounded-full">
+                                                    {event.status || "Upcoming"}
+                                                </span>
 
-                                    <p className="text-gray-500 mt-4">
-                                        No upcoming campaigns
-                                        available.
-                                    </p>
+                                                <h3 className="text-xl font-bold mt-3">
+                                                    {event.campName ||
+                                                        event.title ||
+                                                        "Blood Donation Camp"}
+                                                </h3>
 
-                                </div>
-                            )}
+                                            </div>
 
-                        {/* Campaign Cards */}
+                                            <FaTint className="text-3xl opacity-80" />
 
-                        {!loading &&
-                            !error &&
-                            upcomingCampaigns.length >
-                            0 && (
-                                <div className="grid lg:grid-cols-2 gap-8">
+                                        </div>
 
-                                    {upcomingCampaigns.map(
-                                        (campaign) => (
+                                    </div>
 
-                                            <div
-                                                key={
-                                                    campaign.id
-                                                }
-                                                className="bg-white rounded-2xl shadow-lg overflow-hidden hover:-translate-y-2 hover:shadow-2xl transition duration-300"
-                                            >
+                                    {/* Card Details */}
+                                    <div className="p-6">
 
-                                                {/* Header */}
+                                        <div className="space-y-4 text-gray-600">
 
-                                                <div className="bg-red-800 text-white p-6">
+                                            {/* Hospital */}
+                                            {event.hospitalName && (
+                                                <div className="flex items-start gap-3">
+                                                    <FaHospital className="text-red-500 mt-1" />
 
-                                                    <div className="flex justify-between gap-4">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-800">
+                                                            Organized By
+                                                        </p>
 
-                                                        <h2 className="text-2xl font-bold">
-                                                            {
-                                                                campaign.title
-                                                            }
-                                                        </h2>
-
-                                                        <span className="px-3 py-1 rounded-full text-sm bg-green-500 h-fit whitespace-nowrap">
-                                                            {
-                                                                campaign.status
-                                                            }
-                                                        </span>
-
+                                                        <p className="text-sm">
+                                                            {event.hospitalName}
+                                                        </p>
                                                     </div>
-
                                                 </div>
+                                            )}
 
-                                                {/* Details */}
+                                            {/* Date */}
+                                            <div className="flex items-start gap-3">
+                                                <FaCalendarAlt className="text-red-500 mt-1" />
 
-                                                <div className="p-6 space-y-4">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-gray-800">
+                                                        Date
+                                                    </p>
 
-                                                    {/* Location */}
+                                                    <p className="text-sm">
+                                                        {formatDate(event.date)}
+                                                    </p>
+                                                </div>
+                                            </div>
 
-                                                    <div className="flex items-center gap-3">
+                                            {/* Time */}
+                                            <div className="flex items-start gap-3">
+                                                <FaClock className="text-red-500 mt-1" />
 
-                                                        <FaMapMarkerAlt className="text-red-600" />
+                                                <div>
+                                                    <p className="text-sm font-semibold text-gray-800">
+                                                        Time
+                                                    </p>
 
-                                                        <div>
+                                                    <p className="text-sm">
+                                                        {getTime(event)}
+                                                    </p>
+                                                </div>
+                                            </div>
 
-                                                            <p className="text-xs text-gray-400">
-                                                                Venue
-                                                            </p>
+                                            {/* Venue */}
+                                            <div className="flex items-start gap-3">
+                                                <FaMapMarkerAlt className="text-red-500 mt-1" />
 
-                                                            <p className="font-medium">
-                                                                {
-                                                                    campaign.venue ||
-                                                                    campaign.location
-                                                                }
-                                                            </p>
+                                                <div>
+                                                    <p className="text-sm font-semibold text-gray-800">
+                                                        Venue
+                                                    </p>
 
-                                                        </div>
+                                                    <p className="text-sm">
+                                                        {event.venue ||
+                                                            event.location ||
+                                                            "Venue not available"}
+                                                    </p>
+                                                </div>
+                                            </div>
 
-                                                    </div>
+                                            {/* District */}
+                                            {event.district && (
+                                                <div className="flex items-start gap-3">
+                                                    <FaMapMarkerAlt className="text-red-500 mt-1" />
 
-                                                    {/* Address */}
-
-                                                    {campaign.address && (
-                                                        <div className="flex items-center gap-3">
-
-                                                            <FaMapMarkerAlt className="text-red-600" />
-
-                                                            <p className="text-gray-600">
-                                                                {
-                                                                    campaign.address
-                                                                }
-                                                            </p>
-
-                                                        </div>
-                                                    )}
-
-                                                    {/* Date */}
-
-                                                    <div className="flex items-center gap-3">
-
-                                                        <FaCalendarAlt className="text-red-600" />
-
-                                                        <p>
-                                                            {
-                                                                campaign.date
-                                                            }
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-800">
+                                                            District
                                                         </p>
 
+                                                        <p className="text-sm">
+                                                            {event.district}
+                                                        </p>
                                                     </div>
+                                                </div>
+                                            )}
 
-                                                    {/* Time */}
+                                            {/* Contact */}
+                                            {event.contact && (
+                                                <div className="flex items-start gap-3">
+                                                    <FaUsers className="text-red-500 mt-1" />
 
-                                                    <div className="flex items-center gap-3">
-
-                                                        <FaCalendarAlt className="text-red-600" />
-
-                                                        <p>
-                                                            Time:{" "}
-                                                            {campaign.startTime
-                                                                ? `${campaign.startTime} - ${campaign.endTime}`
-                                                                : campaign.time}
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-800">
+                                                            Contact
                                                         </p>
 
-                                                    </div>
-
-                                                    {/* Target */}
-
-                                                    <div className="flex items-center gap-3">
-
-                                                        <FaUsers className="text-red-600" />
-
-                                                        <p>
-                                                            Target:{" "}
-                                                            {
-                                                                campaign.targetDonors ||
-                                                                campaign.target
-                                                            }{" "}
-                                                            Donors
+                                                        <p className="text-sm">
+                                                            {event.contact}
                                                         </p>
-
                                                     </div>
+                                                </div>
+                                            )}
 
-                                                    {/* Registered */}
+                                        </div>
 
-                                                    {campaign.registeredDonors !==
-                                                        undefined && (
-                                                            <div className="bg-red-50 rounded-lg p-4">
+                                        {/* Description */}
+                                        {event.description && (
+                                            <p className="text-sm text-gray-500 mt-5 leading-6">
+                                                {event.description}
+                                            </p>
+                                        )}
 
-                                                                <div className="flex justify-between">
+                                        {/* Blood Groups */}
+                                        {bloodGroups.length > 0 && (
+                                            <div className="mt-5">
 
-                                                                    <span className="text-gray-600">
-                                                                        Registered
-                                                                        Donors
-                                                                    </span>
+                                                <p className="text-sm font-semibold text-gray-800 mb-2">
+                                                    Required Blood Groups
+                                                </p>
 
-                                                                    <span className="font-bold text-red-600">
-                                                                        {
-                                                                            campaign.registeredDonors
-                                                                        }{" "}
-                                                                        /{" "}
-                                                                        {
-                                                                            campaign.targetDonors
-                                                                        }
-                                                                    </span>
+                                                <div className="flex flex-wrap gap-2">
 
-                                                                </div>
-
-                                                                {/* Progress */}
-
-                                                                <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
-
-                                                                    <div
-                                                                        className="bg-red-600 h-2 rounded-full"
-                                                                        style={{
-                                                                            width: `${Math.min(
-                                                                                100,
-                                                                                (Number(
-                                                                                    campaign.registeredDonors
-                                                                                ) /
-                                                                                    Number(
-                                                                                        campaign.targetDonors ||
-                                                                                        1
-                                                                                    )) *
-                                                                                100
-                                                                            )}%`,
-                                                                        }}
-                                                                    />
-
-                                                                </div>
-
-                                                            </div>
-                                                        )}
-
-                                                    {/* Blood Groups */}
-
-                                                    {campaign.bloodGroups &&
-                                                        campaign
-                                                            .bloodGroups
-                                                            .length >
-                                                        0 && (
-                                                            <div>
-
-                                                                <p className="text-sm font-semibold text-gray-600 mb-2">
-                                                                    Required Blood
-                                                                    Groups
-                                                                </p>
-
-                                                                <div className="flex flex-wrap gap-2">
-
-                                                                    {campaign.bloodGroups.map(
-                                                                        (
-                                                                            group
-                                                                        ) => (
-
-                                                                            <span
-                                                                                key={
-                                                                                    group
-                                                                                }
-                                                                                className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-semibold"
-                                                                            >
-                                                                                {
-                                                                                    group
-                                                                                }
-                                                                            </span>
-
-                                                                        )
-                                                                    )}
-
-                                                                </div>
-
-                                                            </div>
-                                                        )}
+                                                    {bloodGroups.map((group, index) => (
+                                                        <span
+                                                            key={index}
+                                                            className="bg-red-50 text-red-600 px-3 py-1 rounded-full text-xs font-semibold"
+                                                        >
+                                                            {group}
+                                                        </span>
+                                                    ))}
 
                                                 </div>
 
                                             </div>
+                                        )}
 
-                                        )
-                                    )}
+                                        {/* Donor Progress */}
+                                        <div className="mt-6">
+
+                                            <div className="flex justify-between text-sm mb-2">
+
+                                                <span className="text-gray-600">
+                                                    Registered Donors
+                                                </span>
+
+                                                <span className="font-semibold text-gray-800">
+                                                    {registered} / {target || "Not specified"}
+                                                </span>
+
+                                            </div>
+
+                                            <div className="w-full bg-gray-200 rounded-full h-2">
+
+                                                <div
+                                                    className="bg-red-500 h-2 rounded-full transition-all"
+                                                    style={{
+                                                        width: `${progress}%`,
+                                                    }}
+                                                />
+
+                                            </div>
+
+                                        </div>
+
+                                        {/* Join Button */}
+                                        <button
+                                            onClick={() => handleJoinCampaign(event)}
+                                            className="w-full mt-6 bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition flex items-center justify-center gap-2"
+                                        >
+                                            Join Campaign
+                                            <FaArrowRight />
+                                        </button>
+
+                                    </div>
 
                                 </div>
-                            )}
+
+                            );
+                        })}
 
                     </div>
 
-                    {/* =================================
-                        WHY JOIN
-                    ================================= */}
+                )}
 
-                    <div className="mt-20">
+            </section>
 
-                        <h2 className="text-3xl font-bold text-center text-red-600 mb-10">
-                            Why Participate?
-                        </h2>
+            {/* Bottom Section */}
+            <section className="bg-red-50 py-14 px-4">
 
-                        <div className="grid lg:grid-cols-4 md:grid-cols-2 gap-6">
+                <div className="max-w-4xl mx-auto text-center">
 
-                            <div className="bg-white rounded-xl shadow-lg p-6 text-center">
+                    <FaHeartbeat className="text-red-500 text-4xl mx-auto mb-4" />
 
-                                <FaHeart className="text-red-600 text-5xl mx-auto mb-4" />
+                    <h2 className="text-2xl md:text-3xl font-bold text-gray-800">
+                        Be Someone's Lifeline
+                    </h2>
 
-                                <h3 className="font-bold text-xl">
-                                    Save Lives
-                                </h3>
+                    <p className="text-gray-600 mt-3">
+                        Your one donation can make a difference.
+                        Join a blood donation campaign and help save lives.
+                    </p>
 
-                                <p className="text-gray-600 mt-3">
-                                    One blood donation can
-                                    save up to three lives.
-                                </p>
-
-                            </div>
-
-                            <div className="bg-white rounded-xl shadow-lg p-6 text-center">
-
-                                <FaTint className="text-red-600 text-5xl mx-auto mb-4" />
-
-                                <h3 className="font-bold text-xl">
-                                    Free Health Check
-                                </h3>
-
-                                <p className="text-gray-600 mt-3">
-                                    Get a free health
-                                    screening before
-                                    donating.
-                                </p>
-
-                            </div>
-
-                            <div className="bg-white rounded-xl shadow-lg p-6 text-center">
-
-                                <FaUsers className="text-red-600 text-5xl mx-auto mb-4" />
-
-                                <h3 className="font-bold text-xl">
-                                    Community Service
-                                </h3>
-
-                                <p className="text-gray-600 mt-3">
-                                    Support hospitals and
-                                    people in need.
-                                </p>
-
-                            </div>
-
-                            <div className="bg-white rounded-xl shadow-lg p-6 text-center">
-
-                                <FaCalendarAlt className="text-red-600 text-5xl mx-auto mb-4" />
-
-                                <h3 className="font-bold text-xl">
-                                    Regular Events
-                                </h3>
-
-                                <p className="text-gray-600 mt-3">
-                                    Participate in donation
-                                    camps throughout the
-                                    year.
-                                </p>
-
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                    {/* =================================
-                        CTA
-                    ================================= */}
-
-                    <div className="bg-red-800 text-white rounded-3xl mt-20 p-14 text-center">
-
-                        <h2 className="text-4xl font-bold">
-                            Be Someone's Lifeline
-                        </h2>
-
-                        <p className="mt-5 max-w-3xl mx-auto text-lg">
-                            Your blood donation can give
-                            hope to patients fighting for
-                            their lives. Join our next
-                            campaign and become a real-life
-                            hero.
-                        </p>
-
-                        <button
-                            onClick={() =>
-                                document
-                                    .getElementById(
-                                        "campaigns"
-                                    )
-                                    ?.scrollIntoView({
-                                        behavior: "smooth",
-                                    })
-                            }
-                            className="mt-8 bg-white text-red-600 px-10 py-3 rounded-xl font-bold hover:bg-gray-100"
-                        >
-                            Become a Donor
-                        </button>
-
-                    </div>
+                    <button
+                        onClick={() => navigate("/login")}
+                        className="mt-6 bg-red-600 text-white px-7 py-3 rounded-full font-semibold hover:bg-red-700 transition"
+                    >
+                        Become a Donor
+                    </button>
 
                 </div>
 
-            </div>
-        </>
+            </section>
+
+        </div>
     );
 }
 

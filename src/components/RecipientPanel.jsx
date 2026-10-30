@@ -1,71 +1,158 @@
+
+import { useState } from "react";
+
 import {
     FaHome,
     FaTint,
-    FaHospital,
     FaBell,
     FaUser,
     FaSignOutAlt,
     FaHeartbeat,
     FaClipboardList,
+    FaBars,
+    FaTimes,
 } from "react-icons/fa";
+
 import { Link, useNavigate } from "react-router-dom";
 import { logoutUser } from "../redux/userSlice";
-import { useSelector, useDispatch } from "react-redux";
+import { useDispatch } from "react-redux";
 
 function RecipientPanel() {
     const navigate = useNavigate();
     const dispatch = useDispatch();
+
+    const [menuOpen, setMenuOpen] = useState(false);
+
     const handleLogout = () => {
         dispatch(logoutUser());
         localStorage.removeItem("loggedInUser");
+        sessionStorage.removeItem("recipientToken");
+
+        setMenuOpen(false);
         navigate("/login");
     };
+
+    const closeMenu = () => {
+        setMenuOpen(false);
+    };
+
+    const menuItems = [
+        {
+            path: "/recipient-dashboard",
+            icon: <FaHome />,
+            label: "Dashboard",
+        },
+        {
+            path: "/recipient-emergency",
+            icon: <FaHeartbeat />,
+            label: "Emergency Request",
+        },
+        {
+            path: "/my-requests",
+            icon: <FaClipboardList />,
+            label: "My Requests",
+        },
+        {
+            path: "/Rnotifications",
+            icon: <FaBell />,
+            label: "Notifications",
+        },
+        {
+            path: "/Rprofile",
+            icon: <FaUser />,
+            label: "Profile",
+        },
+    ];
+
     return (
+        <>
+            {/* Mobile Header */}
+            <div className="lg:hidden flex items-center justify-between bg-red-800 text-white p-4">
+                <h1 className="text-xl font-bold flex items-center gap-2">
+                    <FaTint />
+                    Recipient
+                </h1>
 
-        <aside className="w-64 bg-red-800 text-white p-6">
+                <button
+                    onClick={() => setMenuOpen(!menuOpen)}
+                    className="text-2xl p-1"
+                    aria-label={menuOpen ? "Close menu" : "Open menu"}
+                >
+                    {menuOpen ? <FaTimes /> : <FaBars />}
+                </button>
+            </div>
 
-            <h1 className="text-2xl font-bold flex items-center gap-2 mb-10">
-                <FaTint />
-                Recipient
-            </h1>
+            {/* Mobile Overlay */}
+            {menuOpen && (
+                <div
+                    onClick={closeMenu}
+                    className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+                />
+            )}
 
-            <nav className="space-y-5">
+            {/* Sidebar */}
+            <aside
+                className={`
+                    fixed top-0 left-0 z-50
+                    h-screen w-64
+                    bg-red-800 text-white p-6
+                    flex flex-col
+                    transform transition-transform duration-300
+                    lg:translate-x-0 lg:static lg:z-auto
+                    lg:min-h-screen lg:shrink-0
+                    ${menuOpen
+                        ? "translate-x-0"
+                        : "-translate-x-full"
+                    }
+                `}
+            >
+                {/* Sidebar Heading */}
+                <div className="flex items-center justify-between mb-10">
+                    <h1 className="text-2xl font-bold flex items-center gap-2">
+                        <FaTint />
+                        Recipient
+                    </h1>
 
-                <Link to="/recipient-dashboard" className="flex items-center gap-3 hover:text-yellow-300">
-                    <FaHome />
-                    Dashboard
-                </Link>
+                    <button
+                        onClick={closeMenu}
+                        className="text-xl lg:hidden"
+                        aria-label="Close menu"
+                    >
+                        <FaTimes />
+                    </button>
+                </div>
 
-                <Link to="/recipient-emergency" className="flex items-center gap-3 hover:text-yellow-300">
-                    <FaHeartbeat />
-                    Emergency Request
-                </Link>
+                {/* Navigation */}
+                <nav className="space-y-5 flex-1">
 
-                <Link to="/my-requests" className="flex items-center gap-3 hover:text-yellow-300">
-                    <FaClipboardList />
-                    My Requests
-                </Link>
+                    {menuItems.map((item) => (
+                        <Link
+                            key={item.path}
+                            to={item.path}
+                            onClick={closeMenu}
+                            className="flex items-center gap-3 hover:text-yellow-300 transition-colors"
+                        >
+                            <span className="text-lg">
+                                {item.icon}
+                            </span>
+
+                            <span>{item.label}</span>
+                        </Link>
+                    ))}
+                    {/* Logout */}
+                    <button
+                        onClick={handleLogout}
+                        className="flex items-center gap-3 hover:text-yellow-300 transition-colors mt-8"
+                    >
+                        <FaSignOutAlt />
+                        Logout
+                    </button>
+                </nav>
 
 
 
-                <Link to="/Rnotifications" className="flex items-center gap-3 hover:text-yellow-300">
-                    <FaBell />
-                    Notifications
-                </Link>
-
-                <Link to="/Rprofile" className="flex items-center gap-3 hover:text-yellow-300">
-                    <FaUser />
-                    Profile
-                </Link>
-
-                <Link to="/" className="flex items-center gap-3 hover:text-yellow-300">
-                    <FaSignOutAlt />
-                    Logout
-                </Link>
-
-            </nav>
-
-        </aside>
+            </aside>
+        </>
     );
 }
 
